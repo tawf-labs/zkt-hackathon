@@ -1,82 +1,56 @@
 'use client';
 
 import { useReadContract } from 'wagmi';
-import { DONATION_CONTRACT_ADDRESS, DonationABI, type Campaign } from '@/lib/donate';
-import { getCampaignStatus, type CampaignStatusInfo } from '@/lib/campaign-status';
+import { CONTRACT_ADDRESSES, ZKTCoreABI } from '@/lib/abi';
+import type { CampaignPool } from '@/lib/types';
 
 /**
- * Hook to fetch campaign status from the contract
- * Returns comprehensive status information including allocation state
+ * Hook to fetch campaign pool status from ZKTCore
+ * Returns pool information to check if donations are allowed
  */
-export function useCampaignStatus(campaignIdHash: string | null) {
+export function useCampaignStatus(poolId: string | number | null) {
   const {
-    data: campaignData,
-    isLoading: isLoadingCampaign,
-    error: campaignError,
-    refetch: refetchCampaign,
+    data: poolData,
+    isLoading,
+    error,
+    refetch,
   } = useReadContract({
-    address: DONATION_CONTRACT_ADDRESS as `0x${string}`,
-    abi: DonationABI,
-    functionName: 'campaigns',
-    args: campaignIdHash ? [campaignIdHash as `0x${string}`] : undefined,
+    address: CONTRACT_ADDRESSES.ZKTCore as `0x${string}`,
+    abi: ZKTCoreABI,
+    functionName: 'getPool',
+    args: poolId !== null ? [BigInt(poolId)] : undefined,
     query: {
-      enabled: !!campaignIdHash,
-      staleTime: 30_000, // 30 seconds
-      gcTime: 300_000, // 5 minutes
-      refetchOnWindowFocus: true,
-    },
-  });
-
-  const {
-    data: totalBps,
-    isLoading: isLoadingBps,
-    error: bpsError,
-    refetch: refetchBps,
-  } = useReadContract({
-    address: DONATION_CONTRACT_ADDRESS as `0x${string}`,
-    abi: DonationABI,
-    functionName: 'totalBps',
-    args: campaignIdHash ? [campaignIdHash as `0x${string}`] : undefined,
-    query: {
-      enabled: !!campaignIdHash,
+      enabled: poolId !== null,
       staleTime: 30_000,
       gcTime: 300_000,
       refetchOnWindowFocus: true,
     },
   });
 
-  // Parse campaign data
-  const campaign: Campaign | null = campaignData
+  const pool: CampaignPool | null = poolData
     ? {
-        exists: campaignData[0] as boolean,
-        allocationLocked: campaignData[1] as boolean,
-        disbursed: campaignData[2] as boolean,
-        closed: campaignData[3] as boolean,
-        totalRaised: campaignData[4] as bigint,
-        startTime: campaignData[5] as bigint,
-        endTime: campaignData[6] as bigint,
+        poolId: poolData[0] as bigint,
+        proposalId: poolData[1] as bigint,
+        organizer: poolData[2] as string,
+        fundingGoal: poolData[3] as bigint,
+        raisedAmount: poolData[4] as bigint,
+        campaignType: poolData[5] as number,
+        campaignTitle: poolData[6] as string,
+        isActive: poolData[7] as boolean,
+        createdAt: poolData[8] as bigint,
+        donors: poolData[9] as string[],
+        fundsWithdrawn: poolData[10] as boolean,
       }
     : null;
 
-  // Calculate campaign status
-  const statusInfo: CampaignStatusInfo | null = campaign
-    ? getCampaignStatus(campaign, Number(totalBps || 0))
-    : null;
-
-  const isLoading = isLoadingCampaign || isLoadingBps;
-  const error = campaignError || bpsError;
-
-  const refetch = () => {
-    refetchCampaign();
-    refetchBps();
-  };
-
   return {
-    campaign,
-    statusInfo,
-    totalBps: Number(totalBps || 0),
-    allocationLocked: campaign?.allocationLocked ?? false,
-    canDonate: statusInfo?.canDonate ?? false,
+    pool,
+    statusInfo: pool ? {
+      status: pool.isActive ? 'active' : 'inactive',
+      description: pool.isActive ? 'Accepting donations' : 'Campaign not accepting donations',
+      canDonate: pool.isActive,
+    } : null,
+    canDonate: pool?.isActive ?? false,
     isLoading,
     error,
     refetch,

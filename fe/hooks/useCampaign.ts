@@ -1,18 +1,27 @@
 'use client';
 
 import { useCallback, useState } from 'react';
-import { useContractRead } from 'wagmi';
-import { DonationABI, DONATION_CONTRACT_ADDRESS, type Campaign } from '@/lib/donate';
+import { useReadContract } from 'wagmi';
+import { CONTRACT_ADDRESSES, ZKTCoreABI } from '@/lib/abi';
+import { CampaignPool, poolToCampaignPoolData, CampaignPoolData } from '@/lib/types';
 
-export const useCampaign = (campaignId: string | undefined) => {
+/**
+ * Hook to fetch campaign pool data from ZKTCore contract
+ * @param poolId - The pool ID to fetch (uint256)
+ */
+export const useCampaign = (poolId?: number | bigint) => {
   const [isLoading, setIsLoading] = useState(false);
 
-  const { data: campaign, isLoading: isReadLoading, refetch } = useContractRead({
-    address: DONATION_CONTRACT_ADDRESS as `0x${string}`,
-    abi: DonationABI,
-    functionName: 'campaigns',
-    args: campaignId ? [campaignId as `0x${string}`] : undefined,
-    enabled: !!campaignId,
+  const { data: pool, isLoading: isReadLoading, refetch } = useReadContract({
+    address: CONTRACT_ADDRESSES.ZKTCore,
+    abi: ZKTCoreABI,
+    functionName: 'getPool',
+    args: poolId ? [BigInt(poolId)] : undefined,
+    query: {
+      enabled: !!poolId && poolId > 0,
+      staleTime: 30_000,
+      gcTime: 300_000,
+    },
   });
 
   const reloadCampaign = useCallback(async () => {
@@ -24,8 +33,12 @@ export const useCampaign = (campaignId: string | undefined) => {
     }
   }, [refetch]);
 
+  // Convert raw contract data to UI-friendly format
+  const campaignData = pool ? poolToCampaignPoolData(pool as CampaignPool) : undefined;
+
   return {
-    campaign: campaign as Campaign | undefined,
+    campaign: campaignData,
+    rawPool: pool as CampaignPool | undefined,
     isLoading: isReadLoading || isLoading,
     refetch: reloadCampaign,
   };

@@ -3,18 +3,34 @@
 import { useCallback } from 'react';
 import { useWallet } from '@/components/providers/web3-provider';
 
+interface DonateParams {
+  poolId: number | bigint;
+  campaignTitle: string;
+  amountIDRX: bigint;
+  ipfsCID?: string; // Optional IPFS CID for donation metadata
+}
+
 interface UseDonateOptions {
-  onSuccess?: (hash: string) => void;
+  onSuccess?: (txHash: string) => void;
   onError?: (error: Error) => void;
 }
 
+/**
+ * Hook for donating to campaign pools
+ * Handles the two-step process: approve IDRX tokens, then donate
+ */
 export const useDonate = (options?: UseDonateOptions) => {
   const { donate: contextDonate, isDonating } = useWallet();
 
   const donate = useCallback(
-    async (params: any) => {
+    async (params: DonateParams) => {
       try {
-        const result = await contextDonate(params);
+        const result = await contextDonate({
+          poolId: params.poolId,
+          campaignTitle: params.campaignTitle,
+          amountIDRX: params.amountIDRX,
+          ipfsCID: params.ipfsCID || '',
+        });
         options?.onSuccess?.(result.txHash);
         return result;
       } catch (error) {

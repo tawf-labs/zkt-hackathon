@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createPublicClient, http, getAddress } from 'viem';
 import { baseSepolia } from 'viem/chains';
-import { DONATION_CONTRACT_ADDRESS, DonationABI } from '@/lib/donate';
+import { CONTRACT_ADDRESSES, ZKTCoreABI } from '@/lib/abi';
 import { Campaign } from '@/hooks/useCampaigns';
 import { formatPinataImageUrl } from '@/lib/pinata-client';
 import { supabase } from '@/lib/supabase-client';
@@ -92,76 +92,66 @@ export async function GET(request: NextRequest) {
       console.error('❌ Error fetching from Supabase:', error);
     }
 
-    // Try to fetch from contract as secondary source (only if Supabase is empty)
+    // Try to fetch from ZKTCore contract as secondary source (only if Supabase is empty)
     if (campaigns.length === 0) {
       try {
-        const campaignCount = 3;
+        const poolCount = await publicClient.readContract({
+          address: getAddress(CONTRACT_ADDRESSES.ZKTCore),
+          abi: ZKTCoreABI,
+          functionName: 'poolCount',
+          args: [],
+        }) as bigint;
 
-        for (let i = 0; i < campaignCount; i++) {
+        const count = Number(poolCount);
+        for (let i = 0; i < count && i < 10; i++) {
           try {
-            const campaignData = await publicClient.readContract({
-              address: getAddress(DONATION_CONTRACT_ADDRESS),
-              abi: DonationABI,
-              functionName: 'campaigns',
-              args: [i as any] as any,
+            const poolData = await publicClient.readContract({
+              address: getAddress(CONTRACT_ADDRESSES.ZKTCore),
+              abi: ZKTCoreABI,
+              functionName: 'getPool',
+              args: [BigInt(i)],
             }) as any;
 
-            if (!campaignData || !campaignData.name) continue;
+            if (!poolData || !poolData.campaignTitle) continue;
 
-          const targetAmountBigInt = BigInt(campaignData.targetAmount || 0);
-          const raisedAmountBigInt = BigInt(campaignData.raisedAmount || 0);
+            const fundingGoal = Number(poolData.fundingGoal || 0n) / 1e18;
+            const raisedAmount = Number(poolData.raisedAmount || 0n) / 1e18;
 
-          const targetAmount = Number(targetAmountBigInt) / 1e18;
-          const raisedAmount = Number(raisedAmountBigInt) / 1e18;
+            if (fundingGoal === 0) continue;
 
-          if (targetAmount === 0) continue;
+            const now = Math.floor(Date.now() / 1000);
+            const endDate = now + (90 * 86400);
 
-          // Use contract endTime if available, otherwise add 90 days
-          const contractEndTime = campaignData.endTime ? Number(campaignData.endTime) : null;
-          const endDate = contractEndTime || Math.floor(Date.now() / 1000) + (90 * 86400);
-          const now = Math.floor(Date.now() / 1000);
-
-          // Skip expired campaigns
-          if (endDate < now) {
-            console.log(`⏰ Skipping expired contract campaign: ${campaignData.name}`);
+            const alreadyExists = campaigns.some(c => c.title === poolData.campaignTitle);
+            if (!alreadyExists) {
+              const campaign: Campaign = {
+                id: campaigns.length,
+                title: poolData.campaignTitle,
+                description: '',
+                imageUrl: 'https://images.unsplash.com/photo-1532629345422-7515f3d16bb6?w=500',
+                image: 'https://images.unsplash.com/photo-1532629345422-7515f3d16bb6?w=500',
+                organizationName: poolData.organizer || 'Unknown Organization',
+                organizationAddress: poolData.organizer || '',
+                category: 'Zakat',
+                location: 'Global',
+                raised: Math.floor(raisedAmount),
+                goal: Math.floor(fundingGoal),
+                donors: poolData.donors?.length || 0,
+                daysLeft: calculateDaysLeft(endDate),
+                isActive: poolData.isActive && endDate > now,
+                isVerified: false,
+                startDate: Number(poolData.createdAt || now),
+                endDate,
+              };
+              campaigns.push(campaign);
+            }
+          } catch (error) {
             continue;
           }
-
-          const daysLeft = calculateDaysLeft(endDate);
-
-          // Only add if not already in Supabase campaigns
-          const alreadyExists = campaigns.some(c => c.title === campaignData.name);
-          if (!alreadyExists) {
-            const campaign: Campaign = {
-              id: campaigns.length,
-              title: campaignData.name,
-              description: campaignData.description || '',
-              imageUrl: 'https://images.unsplash.com/photo-1532629345422-7515f3d16bb6?w=500',
-              image: 'https://images.unsplash.com/photo-1532629345422-7515f3d16bb6?w=500',
-              organizationName: 'Unknown Organization',
-              organizationAddress: campaignData.organization || '',
-              category: 'General',
-              location: 'Global',
-              raised: Math.floor(raisedAmount),
-              goal: Math.floor(targetAmount),
-              donors: 0,
-              daysLeft,
-              isActive: (campaignData.isActive || false) && endDate > now,
-              isVerified: false,
-              startDate: Math.floor(Date.now() / 1000),
-              endDate,
-            };
-            campaigns.push(campaign);
-          }
-        } catch (error) {
-          // Silently skip contract errors - use Supabase data instead
-          continue;
         }
+      } catch (error) {
+        console.log('ℹ️ Contract data skipped - using Supabase data only');
       }
-    } catch (error) {
-      // Silently skip contract access errors
-      console.log('ℹ️ Contract data skipped - using Supabase data only');
-    }
     }
 
     return NextResponse.json(

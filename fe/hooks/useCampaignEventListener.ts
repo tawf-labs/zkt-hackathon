@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from 'react'
 import { usePublicClient } from 'wagmi'
-import { DONATION_CONTRACT_ADDRESS } from '@/lib/donate'
+import { CONTRACT_ADDRESSES } from '@/lib/abi'
 import { supabase } from '@/lib/supabase-client'
 
 /**
@@ -46,14 +46,14 @@ export const useCampaignEventListener = () => {
               `📡 Polling CampaignCreated events: blocks ${lastBlockRef.current} → ${latestBlock}`
             )
             const logs = await (publicClient as any).getLogs({
-              address: DONATION_CONTRACT_ADDRESS as `0x${string}`,
+              address: CONTRACT_ADDRESSES.ZKTCore as `0x${string}`,
               event: {
-                name: 'CampaignCreated',
+                name: 'CampaignPoolCreated',
                 type: 'event',
                 inputs: [
-                  { indexed: true, name: 'campaignId', type: 'bytes32' },
-                  { indexed: false, name: 'startTime', type: 'uint256' },
-                  { indexed: false, name: 'endTime', type: 'uint256' },
+                  { indexed: true, name: 'poolId', type: 'uint256' },
+                  { indexed: true, name: 'proposalId', type: 'uint256' },
+                  { indexed: false, name: 'campaignType', type: 'uint8' },
                 ],
               },
               fromBlock: lastBlockRef.current + BigInt(1),
@@ -63,21 +63,21 @@ export const useCampaignEventListener = () => {
             lastBlockRef.current = latestBlock
 
             if (logs.length > 0) {
-              console.log(`✅ Found ${logs.length} CampaignCreated event(s)`)
+              console.log(`✅ Found ${logs.length} CampaignPoolCreated event(s)`)
             }
 
             // Process each event
             for (const log of logs) {
-              const campaignId = log.args?.campaignId as string
+              const poolId = log.args?.poolId as bigint
 
-              console.log('📢 CampaignCreated event detected:', campaignId)
+              console.log('📢 CampaignPoolCreated event detected:', poolId.toString())
 
-              // Check if campaign already exists in Supabase
+              // Check if pool already exists in Supabase
               try {
                 const { data, error } = await supabase
                   .from('campaigns')
                   .select('id, status')
-                  .eq('campaign_id', campaignId)
+                  .eq('pool_id', poolId.toString())
                   .single()
 
                 if (
@@ -85,22 +85,22 @@ export const useCampaignEventListener = () => {
                   error.code === 'PGRST116'
                 ) {
                   console.log(
-                    '⚠️ Campaign exists on-chain but not in Supabase:',
-                    campaignId
+                    '⚠️ Pool exists on-chain but not in Supabase:',
+                    poolId.toString()
                   )
                 } else if (!error && data) {
-                  // Campaign exists in Supabase
+                  // Pool exists in Supabase
                   if (data.status === 'pending_execution') {
-                    // Update status to 'active' since Safe transaction executed
+                    // Update status to 'active' since transaction executed
                     console.log(
-                      '🔄 Updating campaign status to active (Safe executed):',
-                      campaignId
+                      '🔄 Updating campaign status to active:',
+                      poolId.toString()
                     )
                     
                     const { error: updateError } = await supabase
                       .from('campaigns')
                       .update({ status: 'active' })
-                      .eq('campaign_id', campaignId)
+                      .eq('pool_id', poolId.toString())
                     
                     if (updateError) {
                       console.error('❌ Failed to update campaign status:', updateError)

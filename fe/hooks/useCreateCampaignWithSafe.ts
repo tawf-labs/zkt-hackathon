@@ -6,7 +6,7 @@ import { toast } from '@/components/ui/use-toast'
 import SafeApiKit from '@safe-global/api-kit'
 import Safe from '@safe-global/protocol-kit'
 import { ethers } from 'ethers'
-import { DonationABI, DONATION_CONTRACT_ADDRESS } from '@/lib/donate'
+import { ZKTCoreABI, CONTRACT_ADDRESSES } from '@/lib/abi'
 import { saveCampaignData, type CampaignData } from '@/lib/supabase-client'
 
 export interface CreateCampaignWithSafeParams {
@@ -33,7 +33,7 @@ export interface CreateCampaignWithSafeResult {
 }
 
 const SAFE_ADDRESS = '0xD264BE80817EAfaC5F7575698913FEc4cB38a016'
-const CONTRACT_ADDRESS = DONATION_CONTRACT_ADDRESS
+const CONTRACT_ADDRESS = CONTRACT_ADDRESSES.ZKTCore
 
 /**
  * Hook for creating campaigns via Safe multisig
@@ -92,13 +92,16 @@ export const useCreateCampaignWithSafe = (): CreateCampaignWithSafeResult => {
 
         console.log('✅ Safe Protocol Kit initialized')
 
-        // Encode transaction data using Donation contract ABI (ethers v5)
-        const iface = new ethers.utils.Interface(DonationABI)
+        // Encode transaction data using ZKTCore contract ABI (ethers v5)
+        const iface = new ethers.utils.Interface(ZKTCoreABI)
         
-        const data = iface.encodeFunctionData('createCampaign', [
-          params.campaignId,
-          params.startTime,
-          params.endTime
+        const data = iface.encodeFunctionData('createProposal', [
+          params.title || 'Campaign',
+          params.description || '',
+          ethers.utils.parseEther((params.goal || 0).toString()),
+          false, // isEmergency
+          '', // mockZKKYCProof
+          params.tags || [] // zakatChecklistItems
         ])
 
         console.log('📝 Campaign ID:', params.campaignId)

@@ -9,7 +9,7 @@
  * - CLOSED: Campaign ended or manually closed
  */
 
-import type { Campaign } from './donate';
+import type { CampaignPool } from './types';
 
 export enum CampaignStatus {
   DRAFT = 'draft',
@@ -32,11 +32,10 @@ export interface CampaignStatusInfo {
  * Calculate campaign status based on contract state
  */
 export function getCampaignStatus(
-  campaign: Campaign | null,
-  allocationBpsTotal: number
+  pool: CampaignPool | null
 ): CampaignStatusInfo {
-  // Campaign doesn't exist
-  if (!campaign?.exists) {
+  // Pool doesn't exist
+  if (!pool) {
     return {
       status: CampaignStatus.DRAFT,
       label: 'Draft',
@@ -47,65 +46,12 @@ export function getCampaignStatus(
     };
   }
 
-  // Campaign is closed or disbursed
-  if (campaign.closed || campaign.disbursed) {
+  // Pool is not active
+  if (!pool.isActive) {
     return {
       status: CampaignStatus.CLOSED,
       label: 'Closed',
-      description: campaign.disbursed
-        ? 'Funds have been disbursed to NGOs'
-        : 'Campaign has ended',
-      color: 'gray',
-      canDonate: false,
-      icon: '🔒',
-    };
-  }
-
-  // Allocation not locked
-  if (!campaign.allocationLocked) {
-    // Check if allocation is complete (100% = 10,000 bps)
-    if (allocationBpsTotal >= 10000) {
-      return {
-        status: CampaignStatus.READY,
-        label: 'Ready',
-        description: 'Allocations set to 100%, awaiting lock',
-        color: 'blue',
-        canDonate: false,
-        icon: '✅',
-      };
-    }
-    // Allocation incomplete
-    return {
-      status: CampaignStatus.ALLOCATION_PENDING,
-      label: 'Allocation Pending',
-      description: `Allocations at ${Math.round(allocationBpsTotal / 100)}% (must be 100%)`,
-      color: 'yellow',
-      canDonate: false,
-      icon: '⚠️',
-    };
-  }
-
-  // Check time window for active state
-  const now = Math.floor(Date.now() / 1000);
-  const startTime = Number(campaign.startTime);
-  const endTime = Number(campaign.endTime);
-
-  if (now < startTime) {
-    return {
-      status: CampaignStatus.READY,
-      label: 'Ready',
-      description: `Starting ${new Date(startTime * 1000).toLocaleDateString()}`,
-      color: 'blue',
-      canDonate: false,
-      icon: '⏳',
-    };
-  }
-
-  if (now > endTime) {
-    return {
-      status: CampaignStatus.CLOSED,
-      label: 'Closed',
-      description: 'Campaign ended',
+      description: 'Campaign is not accepting donations',
       color: 'gray',
       canDonate: false,
       icon: '🔒',

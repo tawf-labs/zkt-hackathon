@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Loader2, AlertCircle, Lock } from "lucide-react";
 import { useWallet } from "@/components/providers/web3-provider";
 import { useToast } from "@/hooks/use-toast";
-import { parseDonationAmount } from "@/lib/donate";
+import { parseAmount } from "@/lib/abi";
 import { supabase } from "@/lib/supabase-client";
 import { useCampaignStatus } from "@/hooks/useCampaignStatus";
 
@@ -97,7 +97,7 @@ export function DonationDialog({
       setIsProcessing(true);
       
       // Convert to BigInt (wei format)
-      const amountInWei = parseDonationAmount(donationAmount.toString());
+      const amountInWei = parseAmount(donationAmount.toString());
 
       // Determine if campaignId is a hash (0x...) or numeric
       let poolId: string | bigint;

@@ -2,7 +2,7 @@
 
 import { useCallback, useState } from 'react';
 import { useWriteContract, useAccount, useWaitForTransactionReceipt, usePublicClient } from 'wagmi';
-import { DONATION_CONTRACT_ADDRESS, DonationABI } from '@/lib/donate';
+import { ZKTCoreABI, CONTRACT_ADDRESSES } from '@/lib/abi';
 import { toast } from '@/components/ui/use-toast';
 import { pad, toHex, keccak256, stringToBytes } from 'viem';
 
@@ -196,13 +196,16 @@ export const useCreateCampaignOnChain = (options?: UseCreateCampaignOnChainOptio
 
         // Execute transaction
         const hash = await writeContractAsync({
-          address: DONATION_CONTRACT_ADDRESS as `0x${string}`,
-          abi: DonationABI,
-          functionName: 'createCampaign',
+          address: CONTRACT_ADDRESSES.ZKTCore as `0x${string}`,
+          abi: ZKTCoreABI,
+          functionName: 'createProposal',
           args: [
-            campaignIdBytes32,
-            BigInt(params.startTime),
-            BigInt(params.endTime),
+            params.campaignId,
+            '',
+            BigInt(0),
+            false,
+            '',
+            [],
           ],
         });
 
