@@ -50,6 +50,7 @@ interface IProposalManager {
         CampaignType campaignType;
         uint256 poolId;
         string[] zakatChecklistItems;
+        string metadataURI; // IPFS URI containing full campaign metadata (images, category, location, etc.)
     }
     
     event ProposalCreated(
@@ -70,7 +71,8 @@ interface IProposalManager {
         uint256 fundingGoal,
         bool isEmergency,
         bytes32 mockZKKYCProof,
-        string[] memory zakatChecklistItems
+        string[] memory zakatChecklistItems,
+        string memory metadataURI
     ) external returns (uint256);
     
     function updateKYCStatus(

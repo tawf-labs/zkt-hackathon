@@ -30,7 +30,8 @@ contract ProposalManager is AccessControl, IProposalManager {
         uint256 fundingGoal,
         bool isEmergency,
         bytes32 mockZKKYCProof,
-        string[] memory zakatChecklistItems
+        string[] memory zakatChecklistItems,
+        string memory metadataURI
     ) external onlyRole(ORGANIZER_ROLE) returns (uint256) {
         require(organizer != address(0), "Invalid organizer address");
         require(fundingGoal > 0, "Funding goal must be > 0");
@@ -50,6 +51,7 @@ contract ProposalManager is AccessControl, IProposalManager {
         proposal.createdAt = block.timestamp;
         proposal.status = ProposalStatus.Draft;
         proposal.zakatChecklistItems = zakatChecklistItems;
+        proposal.metadataURI = metadataURI;
         
         if (isEmergency) {
             proposal.kycStatus = KYCStatus.NotRequired;

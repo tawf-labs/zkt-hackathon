@@ -1,132 +1,20 @@
 "use client";
 
-import React, { useState } from 'react';
-import { Search, ExternalLink, Filter, TrendingUp, Users, Coins, Vote, Calendar } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Search, ExternalLink, Filter, TrendingUp, Users, Coins, Vote, Calendar, RefreshCw } from 'lucide-react';
 import { CONTRACT_ADDRESSES, formatAddress, formatTimestamp, formatIDRX } from '@/lib/abi';
-
-type TransactionType = 'all' | 'donation' | 'campaign' | 'proposal' | 'vote';
-
-interface Transaction {
-  hash: string;
-  type: TransactionType;
-  from: string;
-  to?: string;
-  amount?: string;
-  timestamp: number;
-  blockNumber: number;
-  description: string;
-  status: 'success' | 'pending' | 'failed';
-}
+import { useExplorerTransactions, TransactionType } from '@/hooks/useExplorerTransactions';
 
 const ExplorerPage: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [filterType, setFilterType] = useState<TransactionType>('all');
 
-  // Mock transaction data - In production, this would come from blockchain queries
-  const transactions: Transaction[] = [
-    {
-      hash: '0x7f3d8a21c9e4f5b6d8a9c7e2f1a3b5d8c9e4f5b6d8a9c7e2f1a3b5d8c9e4f5b6',
-      type: 'donation',
-      from: '0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb5',
-      to: CONTRACT_ADDRESSES.ZKTCore,
-      amount: '158000000000000000000000',
-      timestamp: 1732492800,
-      blockNumber: 15234567,
-      description: 'Donation to Emergency Relief Fund',
-      status: 'success'
-    },
-    {
-      hash: '0x9e2ab34f8c7d6e5a4b3c2d1e9f8a7b6c5d4e3f2a1b9c8d7e6f5a4b3c2d1e9f8a',
-      type: 'donation',
-      from: '0x8B3c9D2E1F4A5B6C7D8E9F0A1B2C3D4E5F6A7B8C',
-      to: CONTRACT_ADDRESSES.ZKTCore,
-      amount: '316000000000000000000000',
-      timestamp: 1732320000,
-      blockNumber: 15234123,
-      description: 'Donation to Children Education Fund',
-      status: 'success'
-    },
-    {
-      hash: '0x4c8ed92a5f7b6e3c1d9a8f7e6d5c4b3a2f1e9d8c7b6a5f4e3d2c1b9a8f7e6d5',
-      type: 'vote',
-      from: '0x5F9A2E3C4D1B8A7F6E5D4C3B2A1F9E8D7C6B5A4F',
-      to: CONTRACT_ADDRESSES.ZKTCore,
-      timestamp: 1732233600,
-      blockNumber: 15233890,
-      description: 'Voted FOR on Proposal #17: Increase Education Fund Allocation',
-      status: 'success'
-    },
-    {
-      hash: '0x1b5fe87d3c9a2f6e4d8b7c5a3f2e1d9c8b7a6f5e4d3c2b1a9f8e7d6c5b4a3f2',
-      type: 'donation',
-      from: '0x3D5A7C9F1E2B4D6A8C0E2F4B6D8A0C2E4F6A8C0E',
-      to: CONTRACT_ADDRESSES.ZKTCore,
-      amount: '79000000000000000000000',
-      timestamp: 1731974400,
-      blockNumber: 15232456,
-      description: 'Donation to Emergency Relief Fund',
-      status: 'success'
-    },
-    {
-      hash: '0x6a9cf13b8e2d7a5f4c3b9e8d7c6a5f4e3d2c1b9a8f7e6d5c4b3a2f1e9d8c7b6',
-      type: 'campaign',
-      from: '0x9E1F3D5A7C2B4E6F8A0C2D4E6F8A0C2D4E6F8A0C',
-      to: CONTRACT_ADDRESSES.ZKTCore,
-      timestamp: 1731628800,
-      blockNumber: 15231234,
-      description: 'Created campaign: Medical Equipment Fund',
-      status: 'success'
-    },
-    {
-      hash: '0x2f8e9d7c6b5a4f3e2d1c9b8a7f6e5d4c3b2a1f9e8d7c6b5a4f3e2d1c9b8a7f6',
-      type: 'proposal',
-      from: '0x1A2B3C4D5E6F7A8B9C0D1E2F3A4B5C6D7E8F9A0B',
-      to: CONTRACT_ADDRESSES.ZKTCore,
-      timestamp: 1731542400,
-      blockNumber: 15230987,
-      description: 'Created proposal: Implement Quarterly Impact Reports',
-      status: 'success'
-    },
-    {
-      hash: '0x8d7c6b5a4f3e2d1c9b8a7f6e5d4c3b2a1f9e8d7c6b5a4f3e2d1c9b8a7f6e5d4',
-      type: 'vote',
-      from: '0x7C8D9E0F1A2B3C4D5E6F7A8B9C0D1E2F3A4B5C6D',
-      to: CONTRACT_ADDRESSES.ZKTCore,
-      timestamp: 1731456000,
-      blockNumber: 15230654,
-      description: 'Voted FOR on Proposal #16: Implement Quarterly Impact Reports',
-      status: 'success'
-    },
-    {
-      hash: '0x5c4b3a2f1e9d8c7b6a5f4e3d2c1b9a8f7e6d5c4b3a2f1e9d8c7b6a5f4e3d2c1',
-      type: 'donation',
-      from: '0x4E5F6A7B8C9D0E1F2A3B4C5D6E7F8A9B0C1D2E3F',
-      to: CONTRACT_ADDRESSES.ZKTCore,
-      amount: '237000000000000000000000',
-      timestamp: 1731369600,
-      blockNumber: 15230123,
-      description: 'Donation to Clean Water Initiative',
-      status: 'success'
-    }
-  ];
-
-  const filteredTransactions = transactions.filter(tx => {
-    const matchesType = filterType === 'all' || tx.type === filterType;
-    const matchesSearch = searchQuery === '' || 
-      tx.hash.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      tx.from.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      tx.description.toLowerCase().includes(searchQuery.toLowerCase());
-    return matchesType && matchesSearch;
+  // Use real blockchain data
+  const { transactions, allTransactions, isLoading, error, stats, refetch } = useExplorerTransactions({
+    search: searchQuery,
+    type: filterType,
+    pollInterval: 30000, // 30 seconds
   });
-
-  // Calculate stats
-  const totalDonations = transactions
-    .filter(tx => tx.type === 'donation' && tx.amount)
-    .reduce((sum, tx) => sum + Number(tx.amount), 0);
-  
-  const totalTransactions = transactions.length;
-  const activeCampaigns = transactions.filter(tx => tx.type === 'campaign').length;
-  const totalProposals = transactions.filter(tx => tx.type === 'proposal').length;
 
   const getTypeIcon = (type: TransactionType) => {
     switch(type) {
@@ -134,6 +22,7 @@ const ExplorerPage: React.FC = () => {
       case 'campaign': return <TrendingUp className="h-4 w-4" />;
       case 'proposal': return <Vote className="h-4 w-4" />;
       case 'vote': return <Users className="h-4 w-4" />;
+      case 'pool': return <TrendingUp className="h-4 w-4" />;
       default: return null;
     }
   };
@@ -144,13 +33,23 @@ const ExplorerPage: React.FC = () => {
       campaign: 'bg-blue-100 text-blue-700 border-blue-200',
       proposal: 'bg-purple-100 text-purple-700 border-purple-200',
       vote: 'bg-orange-100 text-orange-700 border-orange-200',
+      pool: 'bg-teal-100 text-teal-700 border-teal-200',
       all: ''
     };
-    
+
+    const labelMap: Record<TransactionType, string> = {
+      donation: 'Donation',
+      campaign: 'Campaign',
+      proposal: 'Proposal',
+      vote: 'Vote',
+      pool: 'Pool Created',
+      all: 'All'
+    };
+
     return (
       <span className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs font-medium ${styles[type]}`}>
         {getTypeIcon(type)}
-        {type.charAt(0).toUpperCase() + type.slice(1)}
+        {labelMap[type] || type.charAt(0).toUpperCase() + type.slice(1)}
       </span>
     );
   };
@@ -160,11 +59,21 @@ const ExplorerPage: React.FC = () => {
       <main className="flex-1 py-8">
         <div className="container px-4 mx-auto">
           {/* Header */}
-          <div className="mb-8">
-            <h1 className="text-3xl font-bold mb-2">Blockchain Explorer</h1>
-            <p className="text-muted-foreground">
-              Explore all transactions on the ZKT platform • Base Sepolia Network
-            </p>
+          <div className="mb-8 flex items-center justify-between">
+            <div>
+              <h1 className="text-3xl font-bold mb-2">Blockchain Explorer</h1>
+              <p className="text-muted-foreground">
+                Explore all transactions on the ZKT platform • Base Sepolia Network
+              </p>
+            </div>
+            <button
+              onClick={() => refetch()}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg border border-border hover:bg-accent transition-colors"
+              disabled={isLoading}
+            >
+              <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
+              Refresh
+            </button>
           </div>
 
           {/* Stats Cards */}
@@ -176,7 +85,7 @@ const ExplorerPage: React.FC = () => {
                 </div>
                 <div>
                   <div className="text-sm text-muted-foreground">Total Donated</div>
-                  <div className="text-xl font-bold">{formatIDRX(BigInt(totalDonations))} IDRX</div>
+                  <div className="text-xl font-bold">{formatIDRX(stats.totalDonated)} IDRX</div>
                 </div>
               </div>
             </div>
@@ -188,7 +97,7 @@ const ExplorerPage: React.FC = () => {
                 </div>
                 <div>
                   <div className="text-sm text-muted-foreground">Active Campaigns</div>
-                  <div className="text-xl font-bold">{activeCampaigns}</div>
+                  <div className="text-xl font-bold">{stats.activeCampaigns}</div>
                 </div>
               </div>
             </div>
@@ -200,7 +109,7 @@ const ExplorerPage: React.FC = () => {
                 </div>
                 <div>
                   <div className="text-sm text-muted-foreground">Total Proposals</div>
-                  <div className="text-xl font-bold">{totalProposals}</div>
+                  <div className="text-xl font-bold">{stats.totalProposals}</div>
                 </div>
               </div>
             </div>
@@ -212,7 +121,7 @@ const ExplorerPage: React.FC = () => {
                 </div>
                 <div>
                   <div className="text-sm text-muted-foreground">Transactions</div>
-                  <div className="text-xl font-bold">{totalTransactions}</div>
+                  <div className="text-xl font-bold">{stats.totalTransactions}</div>
                 </div>
               </div>
             </div>
@@ -243,7 +152,7 @@ const ExplorerPage: React.FC = () => {
                 >
                   <option value="all">All Types</option>
                   <option value="donation">Donations</option>
-                  <option value="campaign">Campaigns</option>
+                  <option value="pool">Campaigns</option>
                   <option value="proposal">Proposals</option>
                   <option value="vote">Votes</option>
                 </select>
@@ -254,17 +163,32 @@ const ExplorerPage: React.FC = () => {
           {/* Transactions List */}
           <div className="bg-white text-card-foreground rounded-xl border border-black shadow-sm">
             <div className="p-6">
-              <h2 className="font-semibold text-lg mb-4">Recent Transactions</h2>
-              
-              {filteredTransactions.length === 0 ? (
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="font-semibold text-lg">Recent Transactions</h2>
+                {isLoading && (
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <RefreshCw className="h-4 w-4 animate-spin" />
+                    Loading...
+                  </div>
+                )}
+              </div>
+
+              {error && (
+                <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-4">
+                  <p className="text-sm text-red-700">Error loading transactions: {error.message}</p>
+                </div>
+              )}
+
+              {!isLoading && transactions.length === 0 ? (
                 <div className="text-center py-12 text-muted-foreground">
-                  No transactions found matching your search criteria
+                  <Calendar className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                  <p>No transactions found matching your search criteria</p>
                 </div>
               ) : (
                 <div className="space-y-4">
-                  {filteredTransactions.map((tx) => (
-                    <div 
-                      key={tx.hash}
+                  {transactions.map((tx) => (
+                    <div
+                      key={tx.id}
                       className="border border-border rounded-lg p-4 hover:bg-accent/50 transition-colors"
                     >
                       <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
@@ -272,7 +196,7 @@ const ExplorerPage: React.FC = () => {
                           {/* Transaction Type and Hash */}
                           <div className="flex items-center gap-2 flex-wrap">
                             {getTypeBadge(tx.type)}
-                            <a 
+                            <a
                               href={`https://sepolia.basescan.org/tx/${tx.hash}`}
                               target="_blank"
                               rel="noopener noreferrer"
@@ -293,7 +217,7 @@ const ExplorerPage: React.FC = () => {
                           <div className="flex flex-col sm:flex-row gap-2 text-xs text-muted-foreground">
                             <div className="flex items-center gap-1">
                               <span>From:</span>
-                              <a 
+                              <a
                                 href={`https://sepolia.basescan.org/address/${tx.from}`}
                                 target="_blank"
                                 rel="noopener noreferrer"
@@ -308,7 +232,7 @@ const ExplorerPage: React.FC = () => {
                                 <span className="hidden sm:inline">→</span>
                                 <div className="flex items-center gap-1">
                                   <span>To:</span>
-                                  <a 
+                                  <a
                                     href={`https://sepolia.basescan.org/address/${tx.to}`}
                                     target="_blank"
                                     rel="noopener noreferrer"
@@ -328,7 +252,7 @@ const ExplorerPage: React.FC = () => {
                           {tx.amount && (
                             <div className="text-right">
                               <div className="text-sm font-semibold text-green-600">
-                                {formatIDRX(BigInt(tx.amount))} IDRX
+                                {tx.amount} IDRX
                               </div>
                             </div>
                           )}
@@ -351,7 +275,7 @@ const ExplorerPage: React.FC = () => {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
               <div>
                 <div className="text-muted-foreground mb-1">ZKTCore</div>
-                <a 
+                <a
                   href={`https://sepolia.basescan.org/address/${CONTRACT_ADDRESSES.ZKTCore}`}
                   target="_blank"
                   rel="noopener noreferrer"
@@ -363,7 +287,7 @@ const ExplorerPage: React.FC = () => {
               </div>
               <div>
                 <div className="text-muted-foreground mb-1">MockIDRX Token</div>
-                <a 
+                <a
                   href={`https://sepolia.basescan.org/address/${CONTRACT_ADDRESSES.MockIDRX}`}
                   target="_blank"
                   rel="noopener noreferrer"
@@ -375,7 +299,7 @@ const ExplorerPage: React.FC = () => {
               </div>
               <div>
                 <div className="text-muted-foreground mb-1">Receipt NFT</div>
-                <a 
+                <a
                   href={`https://sepolia.basescan.org/address/${CONTRACT_ADDRESSES.DonationReceiptNFT}`}
                   target="_blank"
                   rel="noopener noreferrer"

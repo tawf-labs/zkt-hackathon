@@ -1,11 +1,12 @@
 'use client';
 
 import React from 'react';
-import { Shield, TrendingUp } from 'lucide-react';
+import { Shield, TrendingUp, Heart, Building2, Scale } from 'lucide-react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { useLanguage } from '@/components/providers/language-provider';
 import { CardBody, CardContainer, CardItem } from '../ui/3d-card';
+import { Button } from '@/components/ui/button';
 
 export function Hero() {
   const { t } = useLanguage();
@@ -35,13 +36,25 @@ export function Hero() {
               {t("hero.subtitle")}
             </p>
 
-            {/* CTA Buttons */}
-            <div className="flex flex-col sm:flex-row items-center justify-center lg:justify-start gap-4">
-              <Link href="/campaigns" className="inline-flex items-center justify-center h-12 px-8 rounded-lg bg-primary text-primary-foreground font-semibold hover:bg-primary/90 transition-all shadow-md shadow-primary/20">
-                {t("hero.startDonating")}
+            {/* CTA Buttons - Role Based */}
+            <div className="flex flex-wrap gap-3">
+              <Link href="/campaigns">
+                <Button size="lg" className="gap-2">
+                  <Heart className="h-5 w-5" />
+                  Saya Donatur
+                </Button>
               </Link>
-              <Link href="/zakat" className="inline-flex items-center justify-center h-12 px-8 rounded-lg border-2 border-primary text-primary font-semibold hover:bg-primary/5 transition-all">
-                {t("hero.exploreCampaigns")}
+              <Link href="/dashboard/organization">
+                <Button size="lg" variant="outline" className="gap-2">
+                  <Building2 className="h-5 w-5" />
+                  Saya Organisasi
+                </Button>
+              </Link>
+              <Link href="/governance">
+                <Button size="lg" variant="secondary" className="gap-2">
+                  <Scale className="h-5 w-5" />
+                  Governance
+                </Button>
               </Link>
             </div>
 

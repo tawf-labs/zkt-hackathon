@@ -54,21 +54,38 @@ export function Header() {
               {isDropdownOpen && (
                 <div className="absolute right-0 mt-2 w-56 bg-white border border-border rounded-lg shadow-lg z-50">
                   <ul className="flex flex-col p-2">
+                    {/* Donors Section */}
+                    <li className="px-3 py-1.5 text-xs font-semibold text-muted-foreground">
+                      Untuk Donatur
+                    </li>
                     <li>
                       <Link href="/dashboard/donor" className="block px-4 py-2.5 rounded-md text-sm hover:bg-accent hover:text-primary transition-colors">
                         {t("dashboard.donor")}
                       </Link>
+                    </li>
+
+                    <li className="my-1 border-t border-border" />
+
+                    {/* Organizations Section */}
+                    <li className="px-3 py-1.5 text-xs font-semibold text-muted-foreground">
+                      Untuk Organisasi
                     </li>
                     <li>
                       <Link href="/dashboard/organization" className="block px-4 py-2.5 rounded-md text-sm hover:bg-accent hover:text-primary transition-colors">
                         {t("dashboard.organization")}
                       </Link>
                     </li>
+
+                    {/* Auditor - Hidden for future use */}
+                    {/* <li className="my-1 border-t border-border" />
+                    <li className="px-3 py-1.5 text-xs font-semibold text-muted-foreground">
+                      Auditor
+                    </li>
                     <li>
                       <Link href="/dashboard/auditor" className="block px-4 py-2.5 rounded-md text-sm hover:bg-accent hover:text-primary transition-colors">
                         {t("dashboard.auditor")}
                       </Link>
-                    </li>
+                    </li> */}
                   </ul>
                 </div>
               )}

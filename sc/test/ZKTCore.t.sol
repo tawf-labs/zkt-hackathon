@@ -68,7 +68,8 @@ contract ZKTCoreTest is Test {
             1000 * 10**18,
             false,
             keccak256("mock_kyc_proof"),
-            checklist
+            checklist,
+            "" // metadataURI (empty for test)
         );
         
         vm.stopPrank();
@@ -93,7 +94,8 @@ contract ZKTCoreTest is Test {
             500 * 10**18,
             true, // emergency
             bytes32(0),
-            new string[](0)
+            new string[](0),
+            "" // metadataURI (empty for test)
         );
         
         vm.stopPrank();
@@ -111,7 +113,8 @@ contract ZKTCoreTest is Test {
             1000 * 10**18,
             false,
             keccak256("kyc_hash"),
-            new string[](0)
+            new string[](0),
+            "" // metadataURI (empty for test)
         );
         
         // Update KYC status
@@ -134,7 +137,8 @@ contract ZKTCoreTest is Test {
             1000 * 10**18,
             false,
             keccak256("kyc"),
-            new string[](0)
+            new string[](0),
+            "" // metadataURI (empty for test)
         );
         
         dao.updateKYCStatus(proposalId, IProposalManager.KYCStatus.Verified, "Verified");
@@ -180,7 +184,8 @@ contract ZKTCoreTest is Test {
             1000 * 10**18,
             true, // emergency
             bytes32(0),
-            new string[](0)
+            new string[](0),
+            "" // metadataURI (empty for test)
         );
         
         vm.prank(organizer);
@@ -242,7 +247,8 @@ contract ZKTCoreTest is Test {
             1000 * 10**18,
             true,
             bytes32(0),
-            new string[](0)
+            new string[](0),
+            "" // metadataURI (empty for test)
         );
         
         vm.prank(organizer);
@@ -376,7 +382,8 @@ contract ZKTCoreTest is Test {
             1000 * 10**18,
             true,
             bytes32(0),
-            new string[](0)
+            new string[](0),
+            "" // metadataURI (empty for test)
         );
         
         vm.prank(organizer);
@@ -422,7 +429,8 @@ contract ZKTCoreTest is Test {
             2000 * 10**18,
             true,
             bytes32(0),
-            new string[](0)
+            new string[](0),
+            "" // metadataURI (empty for test)
         );
         
         vm.prank(organizer);

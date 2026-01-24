@@ -7,9 +7,12 @@ import { toast } from '@/components/ui/use-toast';
 import { pad, toHex, keccak256, stringToBytes } from 'viem';
 
 interface UseCreateCampaignOnChainParams {
-  campaignId: string; // Changed to string for better hash generation
-  startTime: number;
-  endTime: number;
+  title: string;
+  description: string;
+  fundingGoal: number;
+  isEmergency: boolean;
+  zakatChecklistItems: string[];
+  metadataURI: string;
 }
 
 interface UseCreateCampaignOnChainOptions {
@@ -155,44 +158,18 @@ export const useCreateCampaignOnChain = (options?: UseCreateCampaignOnChainOptio
         return null;
       }
 
-      // Validation 2: Time validation
-      const now = Math.floor(Date.now() / 1000);
-      
-      if (params.endTime <= params.startTime) {
-        const error = new Error('End time must be after start time');
-        toast({
-          title: 'Invalid Time Range',
-          description: 'End time must be after start time',
-          variant: 'destructive',
-        });
-        options?.onError?.(error);
-        return null;
-      }
-
-      if (params.startTime < now) {
-        const error = new Error('Start time must be in the future');
-        toast({
-          title: 'Invalid Start Time',
-          description: 'Start time cannot be in the past',
-          variant: 'destructive',
-        });
-        options?.onError?.(error);
-        return null;
-      }
-
       setIsLoading(true);
 
       try {
-        // Generate deterministic bytes32 campaignId
-        const campaignIdBytes32 = generateBytes32CampaignId(params.campaignId);
-
-        console.log('🚀 Creating campaign on-chain:', {
-          campaignId: params.campaignId,
-          campaignIdBytes32,
-          startTime: params.startTime,
-          endTime: params.endTime,
-          address: address,
+        console.log('🚀 Creating proposal on-chain:', {
+          title: params.title,
+          fundingGoal: params.fundingGoal,
+          isEmergency: params.isEmergency,
+          metadataURI: params.metadataURI,
         });
+
+        // Convert funding goal to wei (18 decimals)
+        const fundingGoalWei = BigInt(Math.floor(params.fundingGoal * 1e18));
 
         // Execute transaction
         const hash = await writeContractAsync({
@@ -200,12 +177,13 @@ export const useCreateCampaignOnChain = (options?: UseCreateCampaignOnChainOptio
           abi: ZKTCoreABI,
           functionName: 'createProposal',
           args: [
-            params.campaignId,
-            '',
-            BigInt(0),
-            false,
-            '',
-            [],
+            params.title,
+            params.description,
+            fundingGoalWei,
+            params.isEmergency,
+            '0x0000000000000000000000000000000000000000000000000000000000000000', // mockZKKYCProof
+            params.zakatChecklistItems,
+            params.metadataURI,
           ],
         });
 
@@ -221,8 +199,6 @@ export const useCreateCampaignOnChain = (options?: UseCreateCampaignOnChainOptio
         options?.onSuccess?.(hash);
 
         return {
-          campaignId: params.campaignId,
-          campaignIdBytes32,
           txHash: hash,
         };
 
@@ -231,17 +207,13 @@ export const useCreateCampaignOnChain = (options?: UseCreateCampaignOnChainOptio
 
         // Parse common errors
         let errorMessage = 'Failed to create campaign on blockchain';
-        
+
         if (error?.message?.includes('user rejected')) {
           errorMessage = 'Transaction rejected by user';
         } else if (error?.message?.includes('insufficient funds')) {
           errorMessage = 'Insufficient funds for gas';
         } else if (error?.message?.includes('Only admin')) {
           errorMessage = 'Only admin can create campaigns';
-        } else if (error?.message?.includes('Campaign already exists')) {
-          errorMessage = 'Campaign ID already exists';
-        } else if (error?.message?.includes('Contract is paused')) {
-          errorMessage = 'Contract is currently paused';
         } else if (error?.reason) {
           errorMessage = error.reason;
         } else if (error?.message) {

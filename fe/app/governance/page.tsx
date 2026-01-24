@@ -17,7 +17,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog"
-import { Vote, Users, Clock, CheckCircle2, Shield, Plus, ThumbsUp, ThumbsDown, LayoutDashboard, FileText, Settings, Download, TrendingUp, Loader2, AlertCircle } from "lucide-react"
+import { Vote, Users, Clock, CheckCircle2, Shield, Plus, ThumbsUp, ThumbsDown, Loader2, AlertCircle, BookOpen } from "lucide-react"
 import { useProposals, useProposalCount } from "@/hooks/useProposals"
 import { useVoting } from "@/hooks/useVoting"
 import { useVotingPower } from "@/hooks/useVotingPower"
@@ -30,6 +30,7 @@ export default function GovernancePage() {
   const { toast } = useToast()
   const { address, isConnected } = useAccount()
   const [hasVoted, setHasVoted] = useState<Record<string, boolean>>({})
+  const [activeLayer, setActiveLayer] = useState<"community" | "sharia">("community")
 
   // Get real voting power from blockchain
   const { votingPower, formattedVotingPower, isLoading: isLoadingVotingPower } = useVotingPower()
@@ -124,6 +125,22 @@ export default function GovernancePage() {
       canFinalize: p.status === ProposalStatus.CommunityVote && now >= endTime,
     }
   })
+
+  // Filter proposals for each layer
+  const communityProposals = proposals.filter(p =>
+    p.statusEnum === ProposalStatus.CommunityVote ||
+    p.statusEnum === ProposalStatus.Draft ||
+    p.statusEnum === ProposalStatus.CommunityPassed ||
+    p.statusEnum === ProposalStatus.CommunityRejected
+  )
+
+  const shariaProposals = proposals.filter(p =>
+    p.campaignType === CampaignType.ZakatCompliant &&
+    (p.statusEnum === ProposalStatus.CommunityPassed ||
+     p.statusEnum === ProposalStatus.ShariaReview ||
+     p.statusEnum === ProposalStatus.ShariaApproved ||
+     p.statusEnum === ProposalStatus.ShariaRejected)
+  )
 
   return (
     <div className="flex min-h-screen bg-gray-50">
@@ -270,45 +287,41 @@ export default function GovernancePage() {
           </div>
         </div>
 
-        {/* Proposals Section */}
+        {/* Dual-Layer Proposals Section */}
         <div className="bg-white rounded-xl border border-black shadow-sm">
           <div className="p-6 border-b border-black">
-            <h2 className="font-semibold">All Proposals</h2>
-            <p className="text-sm text-black mt-1">View and vote on proposals to shape the platform's future</p>
+            <h2 className="font-semibold">Governance Proposals</h2>
+            <p className="text-sm text-black mt-1">Navigate between Community DAO and Sharia Council layers</p>
           </div>
 
-          <Tabs defaultValue="all" className="p-6">
-            <TabsList className="mb-6">
-              <TabsTrigger value="all">All Proposals</TabsTrigger>
-              <TabsTrigger value="active">Active</TabsTrigger>
-              <TabsTrigger value="pending">Pending Review</TabsTrigger>
-              <TabsTrigger value="approved">Approved</TabsTrigger>
+          <Tabs value={activeLayer} onValueChange={(v) => setActiveLayer(v as "community" | "sharia")} className="p-6">
+            <TabsList className="mb-6 grid w-full max-w-md grid-cols-2">
+              <TabsTrigger value="community" className="gap-2">
+                <Users className="h-4 w-4" />
+                Community DAO
+              </TabsTrigger>
+              <TabsTrigger value="sharia" className="gap-2">
+                <Shield className="h-4 w-4" />
+                Dewan Syariah
+              </TabsTrigger>
             </TabsList>
 
-            <TabsContent value="all" className="space-y-4 mt-0">
-              {proposals.map((proposal) => (
-                <ProposalCard
-                  key={proposal.id}
-                  proposal={proposal}
-                  hasVoted={hasVoted[proposal.id]}
-                  onVote={(voteType) => handleVote(proposal.id, voteType)}
-                  onFinalize={() => handleFinalize(proposal.id)}
-                  onSubmitForVote={() => handleSubmitForVote(proposal.id)}
-                  isLoading={isVoting}
-                />
-              ))}
-              {proposals.length === 0 && !isLoading && (
+            {/* Community DAO Tab */}
+            <TabsContent value="community" className="space-y-4 mt-0">
+              <div className="mb-6">
+                <h3 className="text-lg font-semibold mb-2">Community DAO Proposals</h3>
+                <p className="text-sm text-muted-foreground">
+                  All vZKT holders can vote on these proposals. Vote weight is proportional to your voting power.
+                </p>
+              </div>
+
+              {communityProposals.length === 0 && !isLoading ? (
                 <div className="text-center py-12 text-muted-foreground">
                   <AlertCircle className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                  <p>No proposals found. Create one to get started!</p>
+                  <p>No community proposals found. Create one to get started!</p>
                 </div>
-              )}
-            </TabsContent>
-
-            <TabsContent value="active" className="space-y-4 mt-0">
-              {proposals
-                .filter((p) => p.status === "Active")
-                .map((proposal) => (
+              ) : (
+                communityProposals.map((proposal) => (
                   <ProposalCard
                     key={proposal.id}
                     proposal={proposal}
@@ -318,56 +331,46 @@ export default function GovernancePage() {
                     onSubmitForVote={() => handleSubmitForVote(proposal.id)}
                     isLoading={isVoting}
                   />
-                ))}
-              {proposals.filter((p) => p.status === "Active").length === 0 && (
-                <div className="text-center py-12 text-muted-foreground">
-                  <Clock className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                  <p>No active proposals at the moment.</p>
-                </div>
+                ))
               )}
             </TabsContent>
 
-            <TabsContent value="pending" className="space-y-4 mt-0">
-              {proposals
-                .filter((p) => p.status === "Pending Review")
-                .map((proposal) => (
-                  <ProposalCard
-                    key={proposal.id}
-                    proposal={proposal}
-                    hasVoted={hasVoted[proposal.id]}
-                    onVote={(voteType) => handleVote(proposal.id, voteType)}
-                    onFinalize={() => handleFinalize(proposal.id)}
-                    onSubmitForVote={() => handleSubmitForVote(proposal.id)}
-                    isLoading={isVoting}
-                  />
-                ))}
-              {proposals.filter((p) => p.status === "Pending Review").length === 0 && (
+            {/* Sharia Council Tab */}
+            <TabsContent value="sharia" className="space-y-4 mt-0">
+              <div className="mb-6">
+                <h3 className="text-lg font-semibold mb-2">Dewan Syariah Review</h3>
+                <p className="text-sm text-muted-foreground">
+                  Zakat-compliant proposals that passed community vote require Sharia Council approval.
+                  Only authorized council members can review these proposals.
+                </p>
+              </div>
+
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-6">
+                <div className="flex items-start gap-3">
+                  <BookOpen className="h-5 w-5 text-amber-600 mt-0.5" />
+                  <div>
+                    <h4 className="font-semibold text-amber-900">Sharia Council Access</h4>
+                    <p className="text-sm text-amber-800 mt-1">
+                      Only authorized Sharia Council members can vote on proposals in this tab.
+                      Contact the DAO administrator if you believe you should have access.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {shariaProposals.length === 0 && !isLoading ? (
                 <div className="text-center py-12 text-muted-foreground">
                   <Shield className="h-12 w-12 mx-auto mb-4 opacity-50" />
                   <p>No proposals pending Sharia Council review.</p>
                 </div>
-              )}
-            </TabsContent>
-
-            <TabsContent value="approved" className="space-y-4 mt-0">
-              {proposals
-                .filter((p) => p.status === "Approved")
-                .map((proposal) => (
-                  <ProposalCard
+              ) : (
+                shariaProposals.map((proposal) => (
+                  <ShariaReviewCard
                     key={proposal.id}
                     proposal={proposal}
-                    hasVoted={hasVoted[proposal.id]}
-                    onVote={(voteType) => handleVote(proposal.id, voteType)}
-                    onFinalize={() => handleFinalize(proposal.id)}
-                    onSubmitForVote={() => handleSubmitForVote(proposal.id)}
                     isLoading={isVoting}
                   />
-                ))}
-              {proposals.filter((p) => p.status === "Approved").length === 0 && (
-                <div className="text-center py-12 text-muted-foreground">
-                  <CheckCircle2 className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                  <p>No approved proposals yet.</p>
-                </div>
+                ))
               )}
             </TabsContent>
           </Tabs>
@@ -377,7 +380,7 @@ export default function GovernancePage() {
   )
 }
 
-// Proposal Card Component
+// Proposal Card Component for Community Voting
 function ProposalCard({
   proposal,
   hasVoted,
@@ -540,6 +543,93 @@ function ProposalCard({
               Finalize Vote
             </Button>
           )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// Sharia Review Card Component
+function ShariaReviewCard({
+  proposal,
+  isLoading,
+}: {
+  proposal: any
+  isLoading: boolean
+}) {
+  return (
+    <div className="border border-amber-300 rounded-lg p-6 hover:shadow-md transition-shadow bg-amber-50">
+      <div className="flex items-start justify-between gap-4 mb-4">
+        <div className="flex-1">
+          <div className="flex items-center gap-2 mb-2 flex-wrap">
+            <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium border border-amber-600 bg-amber-100 text-amber-700">
+              Pending Sharia Review
+            </span>
+            <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium border border-black">
+              Zakat Compliant
+            </span>
+          </div>
+          <h3 className="text-lg font-bold mb-2">{proposal.title}</h3>
+          <p className="text-sm text-gray-700 line-clamp-2">{proposal.description}</p>
+        </div>
+      </div>
+
+      {/* Voting Stats - Read Only */}
+      <div className="space-y-3 mb-4">
+        <div className="flex justify-between text-sm">
+          <span className="text-gray-600">Community Vote Result</span>
+          <span className="font-medium text-green-600">Passed</span>
+        </div>
+        <div className="grid grid-cols-3 gap-4 pt-2">
+          <div className="space-y-1">
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-green-600 font-medium flex items-center gap-1">
+                <ThumbsUp className="h-3 w-3" /> For
+              </span>
+              <span className="font-bold">{proposal.votesFor.toLocaleString()}</span>
+            </div>
+            <Progress value={proposal.percentage} className="h-1.5 [&>div]:bg-green-600" />
+          </div>
+          <div className="space-y-1">
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-red-600 font-medium flex items-center gap-1">
+                <ThumbsDown className="h-3 w-3" /> Against
+              </span>
+              <span className="font-bold">{proposal.votesAgainst.toLocaleString()}</span>
+            </div>
+            <Progress value={proposal.totalVotes > 0 ? (proposal.votesAgainst / proposal.totalVotes) * 100 : 0} className="h-1.5 [&>div]:bg-red-600" />
+          </div>
+          <div className="space-y-1">
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-gray-600 font-medium">Abstain</span>
+              <span className="font-bold">{proposal.votesAbstain.toLocaleString()}</span>
+            </div>
+            <Progress value={proposal.totalVotes > 0 ? (proposal.votesAbstain / proposal.totalVotes) * 100 : 0} className="h-1.5 [&>div]:bg-gray-400" />
+          </div>
+        </div>
+      </div>
+
+      {/* Sharia Review Action Buttons */}
+      <div className="flex items-center justify-between pt-4 border-t border-amber-200">
+        <div className="text-sm text-gray-600">
+          <Shield className="inline h-3 w-3 mr-1" />
+          Requires Sharia Council approval
+        </div>
+        <div className="flex gap-2">
+          <button
+            className="flex items-center gap-1 px-3 py-1 text-xs font-medium rounded-md border border-green-600 text-green-600 hover:bg-green-600 hover:text-white bg-transparent disabled:opacity-50"
+            disabled={isLoading}
+          >
+            <ThumbsUp className="h-3 w-3" />
+            Approve
+          </button>
+          <button
+            className="flex items-center gap-1 px-3 py-1 text-xs font-medium rounded-md border border-red-600 text-red-600 hover:bg-red-600 hover:text-white bg-transparent disabled:opacity-50"
+            disabled={isLoading}
+          >
+            <ThumbsDown className="h-3 w-3" />
+            Reject
+          </button>
         </div>
       </div>
     </div>

@@ -1,22 +1,24 @@
 "use client";
 
 import { useState } from "react";
+import { useAccount } from "wagmi";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Loader2, AlertCircle, Lock } from "lucide-react";
+import { Loader2, AlertCircle, Lock, Shield, Eye, EyeOff } from "lucide-react";
 import { useWallet } from "@/components/providers/web3-provider";
 import { useToast } from "@/hooks/use-toast";
 import { parseAmount } from "@/lib/abi";
-import { supabase } from "@/lib/supabase-client";
 import { useCampaignStatus } from "@/hooks/useCampaignStatus";
+import { usePrivateDonate } from "@/hooks/usePrivateDonate";
+import { ZakatCertificateModal } from "@/components/certificates/zakat-certificate-modal";
 
 interface DonationDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  campaignId: string | number; // can be hash (string) or numeric ID
-  campaignIdHash?: string; // on-chain campaign ID (bytes32 hash)
+  campaignId: string | number;
+  campaignIdHash?: string;
   campaignTitle: string;
   campaignGoal: number;
   campaignRaised: number;
@@ -35,8 +37,17 @@ export function DonationDialog({
 }: DonationDialogProps) {
   const [amount, setAmount] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isPrivate, setIsPrivate] = useState(false);
+  const [showCertificateModal, setShowCertificateModal] = useState(false);
+  const [lastDonationTx, setLastDonationTx] = useState<{
+    hash: string;
+    amount: number;
+  } | null>(null);
+
   const { donate, isConnected, formattedIdrxBalance, isDonating } = useWallet();
+  const { donatePrivate, isLoading: isPrivateDonating } = usePrivateDonate();
   const { toast } = useToast();
+  const { address } = useAccount();
 
   // Fetch campaign status to check if donations are allowed
   const { statusInfo, canDonate, isLoading: isLoadingStatus } = useCampaignStatus(
@@ -95,58 +106,59 @@ export function DonationDialog({
 
     try {
       setIsProcessing(true);
-      
+
       // Convert to BigInt (wei format)
       const amountInWei = parseAmount(donationAmount.toString());
 
       // Determine if campaignId is a hash (0x...) or numeric
-      let poolId: string | bigint;
-      if (typeof campaignId === 'string' && campaignId.startsWith('0x')) {
-        // It's a hash, use directly
-        poolId = campaignId;
-        console.log(`[Donate] Using hash campaign ID: ${poolId}`);
+      let poolId: bigint;
+      const numericId = typeof campaignId === 'string' ? parseInt(campaignId, 10) : campaignId;
+      poolId = BigInt(numericId);
+
+      if (isPrivate) {
+        // Private donation
+        const result = await donatePrivate({
+          poolId,
+          amount: amountInWei,
+          campaignTitle,
+        });
+
+        if (result && result.txHash) {
+          setLastDonationTx({
+            hash: result.txHash,
+            amount: donationAmount,
+          });
+          setShowCertificateModal(true);
+
+          toast({
+            title: "Private Donation Successful! 🎉",
+            description: `Your private donation of ${donationAmount.toLocaleString('id-ID')} IDRX to ${campaignTitle} is complete.`,
+          });
+        }
       } else {
-        // It's numeric, convert to BigInt
-        const numericId = typeof campaignId === 'string' ? parseInt(campaignId, 10) : campaignId;
-        poolId = BigInt(numericId);
-        console.log(`[Donate] Using numeric campaign ID: ${poolId.toString()}`);
+        // Public donation
+        const { txHash } = await donate({
+          poolId,
+          campaignTitle,
+          amountIDRX: amountInWei,
+        });
+
+        if (txHash) {
+          setLastDonationTx({
+            hash: txHash,
+            amount: donationAmount,
+          });
+          setShowCertificateModal(true);
+
+          toast({
+            title: "Donation Successful! 🎉",
+            description: `You donated ${donationAmount.toLocaleString('id-ID')} IDRX to ${campaignTitle}`,
+          });
+        }
       }
 
-      const { txHash } = await donate({
-        poolId,
-        campaignTitle,
-        amountIDRX: amountInWei,
-      });
-
-      // Update Supabase with new raised amount
-      try {
-        const { data: campaign } = await supabase
-          .from('campaigns')
-          .select('total_raised')
-          .order('created_at', { ascending: false })
-          .limit(1)
-          .single();
-
-        const newTotalRaised = (campaign?.total_raised || campaignRaised) + donationAmount;
-        
-        await supabase
-          .from('campaigns')
-          .update({ total_raised: newTotalRaised })
-          .eq('campaign_id', campaignId);
-
-        console.log(`✅ Supabase updated: ${newTotalRaised} IDRX`);
-      } catch (supabaseError) {
-        console.warn('Could not update Supabase (non-critical):', supabaseError);
-      }
-
-      toast({
-        title: "Donation Successful! 🎉",
-        description: `You donated ${donationAmount.toLocaleString('id-ID')} IDRX to ${campaignTitle}`,
-      });
-
-      // Reset and close
+      // Reset amount but keep dialog open for certificate option
       setAmount("");
-      onOpenChange(false);
 
       // Trigger parent refresh
       if (onSuccess) {
@@ -160,7 +172,7 @@ export function DonationDialog({
         code: error?.code,
         fullError: error,
       });
-      
+
       toast({
         variant: "destructive",
         title: "Donation Failed",
@@ -175,6 +187,7 @@ export function DonationDialog({
   const remaining = campaignGoal - campaignRaised;
 
   return (
+    <>
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[500px]">
         <DialogHeader>
@@ -204,6 +217,52 @@ export function DonationDialog({
             <div className="bg-primary/5 border border-primary/20 rounded-lg p-3 flex justify-between items-center">
               <span className="text-sm text-muted-foreground">Your Balance</span>
               <span className="font-bold text-primary">{formattedIdrxBalance} IDRX</span>
+            </div>
+          )}
+
+          {/* Privacy Toggle */}
+          <div className="flex items-center justify-between p-3 bg-muted/30 rounded-lg">
+            <div className="flex items-center gap-3">
+              {isPrivate ? (
+                <EyeOff className="h-5 w-5 text-purple-600" />
+              ) : (
+                <Eye className="h-5 w-5 text-gray-500" />
+              )}
+              <div>
+                <p className="font-medium text-sm">
+                  {isPrivate ? "Private Donation" : "Public Donation"}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {isPrivate
+                    ? "Your donation amount will be hidden using cryptography"
+                    : "Your donation will be publicly visible"}
+                </p>
+              </div>
+            </div>
+            <Button
+              type="button"
+              variant={isPrivate ? "default" : "outline"}
+              size="sm"
+              onClick={() => setIsPrivate(!isPrivate)}
+              disabled={isProcessing || isDonating}
+              className={isPrivate ? "bg-purple-600 hover:bg-purple-700" : ""}
+            >
+              {isPrivate ? "Private" : "Public"}
+            </Button>
+          </div>
+
+          {/* Private Donation Notice */}
+          {isPrivate && (
+            <div className="flex items-start gap-2 p-3 bg-purple-50 border border-purple-200 rounded-lg">
+              <Shield className="h-4 w-4 text-purple-600 mt-0.5 flex-shrink-0" />
+              <div className="flex-1">
+                <p className="text-sm font-semibold text-purple-800">
+                  🔒 Privacy Mode Enabled
+                </p>
+                <p className="text-xs text-purple-700 mt-1">
+                  Your donation will use Pedersen commitments to hide the amount. You'll still receive an NFT receipt for your records.
+                </p>
+              </div>
             </div>
           )}
 
@@ -266,13 +325,30 @@ export function DonationDialog({
           )}
 
           {/* Transaction Info */}
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm space-y-1">
-            <p className="font-semibold text-blue-900">ℹ️ Transaction Details</p>
-            <ul className="list-disc list-inside text-blue-800 space-y-0.5 text-xs">
+          <div className={`border rounded-lg p-3 text-sm space-y-1 ${
+            isPrivate
+              ? "bg-purple-50 border-purple-200"
+              : "bg-blue-50 border-blue-200"
+          }`}>
+            <p className={`font-semibold ${isPrivate ? "text-purple-900" : "text-blue-900"}`}>
+              {isPrivate ? "🔒 Private Transaction Details" : "ℹ️ Transaction Details"}
+            </p>
+            <ul className={`list-disc list-inside space-y-0.5 text-xs ${
+              isPrivate ? "text-purple-800" : "text-blue-800"
+            }`}>
               <li>Approval required for first-time donation</li>
               <li>You'll receive a soulbound NFT receipt</li>
-              <li>Earn vZKT governance tokens (1:1 ratio)</li>
-              <li>All transactions recorded on Base Sepolia</li>
+              {isPrivate ? (
+                <>
+                  <li>Donation amount hidden using Pedersen commitments</li>
+                  <li>Your address won't appear in the public donors list</li>
+                </>
+              ) : (
+                <>
+                  <li>Earn vZKT governance tokens (1:1 ratio)</li>
+                  <li>All transactions recorded on Base Sepolia</li>
+                </>
+              )}
             </ul>
           </div>
 
@@ -287,24 +363,51 @@ export function DonationDialog({
               Cancel
             </Button>
             <Button
-              className="flex-1"
+              className={`flex-1 ${isPrivate ? "bg-purple-600 hover:bg-purple-700" : ""}`}
               onClick={handleDonate}
               disabled={!canDonate || !isConnected || !amount || isProcessing || isDonating || isLoadingStatus}
             >
-              {isProcessing || isDonating ? (
+              {isProcessing || isDonating || isPrivateDonating ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  {isDonating ? "Processing..." : "Confirming..."}
+                  Processing...
                 </>
               ) : !canDonate ? (
                 "Campaign Not Ready"
               ) : (
-                "Confirm Donation"
+                `Confirm ${isPrivate ? "Private " : ""}Donation`
               )}
             </Button>
           </div>
         </div>
       </DialogContent>
     </Dialog>
+
+    {/* Zakat Certificate Modal - shown after successful donation */}
+    {lastDonationTx && isConnected && address && (
+      <ZakatCertificateModal
+        open={showCertificateModal}
+        onOpenChange={(open) => {
+          setShowCertificateModal(open);
+          if (!open) {
+            // Close the main donation dialog when certificate modal is closed
+            onOpenChange(false);
+            setLastDonationTx(null);
+          }
+        }}
+        donationDetails={{
+          donorAddress: address,
+          poolId: typeof campaignId === 'string' ? parseInt(campaignId, 10) : campaignId,
+          amount: lastDonationTx.amount,
+          campaignTitle,
+          campaignType: isPrivate ? 1 : 0,
+          transactionHash: lastDonationTx.hash,
+        }}
+        onCertificateGenerated={(cert) => {
+          console.log('Certificate generated:', cert);
+        }}
+      />
+    )}
+  </>
   );
 }

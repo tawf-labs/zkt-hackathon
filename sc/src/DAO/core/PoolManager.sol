@@ -35,9 +35,12 @@ contract PoolManager is AccessControl, ReentrancyGuard {
     DonationReceiptNFT public receiptNFT;
     
     uint256 public poolCount;
-    
+
     mapping(uint256 => CampaignPool) public campaignPools;
     mapping(uint256 => mapping(address => uint256)) public poolDonations;
+
+    // Private donation support
+    mapping(bytes32 => bool) public usedCommitments; // Track used Pedersen commitments
     
     event CampaignPoolCreated(
         uint256 indexed poolId,
@@ -47,6 +50,12 @@ contract PoolManager is AccessControl, ReentrancyGuard {
     event DonationReceived(
         uint256 indexed poolId,
         address indexed donor,
+        uint256 amount,
+        uint256 receiptTokenId
+    );
+    event PrivateDonationReceived(
+        uint256 indexed poolId,
+        bytes32 indexed commitment,
         uint256 amount,
         uint256 receiptTokenId
     );
@@ -132,6 +141,55 @@ contract PoolManager is AccessControl, ReentrancyGuard {
         
         emit DonationReceived(poolId, donor, amount, receiptTokenId);
         
+        if (pool.raisedAmount >= pool.fundingGoal) {
+            emit FundingGoalReached(poolId, pool.raisedAmount);
+        }
+    }
+
+    /**
+     * @notice Make a private donation using Pedersen commitment for privacy
+     * @param donor Address making the donation (for NFT receipt)
+     * @param poolId Campaign pool ID
+     * @param amount Amount to donate
+     * @param commitment Pedersen commitment of the amount (for privacy)
+     * @param ipfsCID IPFS CID containing donation metadata
+     */
+    function donatePrivate(
+        address donor,
+        uint256 poolId,
+        uint256 amount,
+        bytes32 commitment,
+        string memory ipfsCID
+    ) external nonReentrant {
+        CampaignPool storage pool = campaignPools[poolId];
+
+        require(pool.isActive, "Pool not active");
+        require(amount > 0, "Amount must be > 0");
+        require(commitment != bytes32(0), "Invalid commitment");
+        require(bytes(ipfsCID).length > 0, "IPFS CID required");
+        require(!usedCommitments[commitment], "Commitment already used");
+
+        // Mark commitment as used to prevent double-spend
+        usedCommitments[commitment] = true;
+
+        require(
+            idrxToken.transferFrom(donor, address(this), amount),
+            "IDRX transfer failed"
+        );
+
+        // For private donations, we don't track donor address in the public donors array
+        // The donor still receives an NFT receipt for proof of donation
+        poolDonations[poolId][donor] += amount;
+        pool.raisedAmount += amount;
+
+        // Mint NFT receipt
+        string memory campaignTypeStr = pool.campaignType == IProposalManager.CampaignType.ZakatCompliant
+            ? "Zakat"
+            : "Normal";
+        uint256 receiptTokenId = receiptNFT.mint(donor, poolId, amount, pool.campaignTitle, campaignTypeStr, ipfsCID);
+
+        emit PrivateDonationReceived(poolId, commitment, amount, receiptTokenId);
+
         if (pool.raisedAmount >= pool.fundingGoal) {
             emit FundingGoalReached(poolId, pool.raisedAmount);
         }

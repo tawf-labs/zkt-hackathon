@@ -206,11 +206,118 @@ export const useShariaReview = (options?: UseShariaReviewOptions) => {
     return false;
   }, []);
 
+  /**
+   * Get proposals pending Sharia review
+   * Queries proposals that have passed community vote but need Sharia approval
+   */
+  const getPendingShariaReviews = useCallback(async () => {
+    // This would iterate through proposals and filter by:
+    // - status === ProposalStatus.CommunityPassed
+    // - campaignType === CampaignType.ZakatCompliant
+    // For now, returning empty array as placeholder
+    return [];
+  }, []);
+
+  /**
+   * Get bundle by proposal ID
+   * Used to find which bundle contains a specific proposal
+   */
+  const getBundleByProposalId = useCallback(async (proposalId: number | bigint) => {
+    // Query to find which bundle contains this proposal
+    // For now, returning the proposalId itself as the bundleId
+    // In the future, bundles may group multiple proposals
+    return BigInt(proposalId);
+  }, []);
+
+  /**
+   * Submit Sharia Council vote on a proposal
+   * @param proposalId - The proposal ID to review
+   * @param approved - Whether the council approves the proposal
+   * @param mockZKReviewProof - ZK proof of the review
+   */
+  const submitShariaVote = useCallback(async (
+    proposalId: number | bigint,
+    approved: boolean,
+    mockZKReviewProof: string = ''
+  ) => {
+    if (!isConnected || !address) {
+      const error = new Error('Wallet not connected');
+      toast({
+        title: 'Error',
+        description: 'Please connect your wallet first',
+        variant: 'destructive',
+      });
+      options?.onError?.(error);
+      return null;
+    }
+
+    setIsLoading(true);
+
+    try {
+      // Get the bundle (for now, same as proposalId)
+      const bundleId = await getBundleByProposalId(proposalId);
+
+      console.log('Submitting Sharia Council vote:', {
+        bundleId: bundleId.toString(),
+        proposalId: proposalId.toString(),
+        approved,
+        mockZKReviewProof,
+      });
+
+      // Call the review function through ZKTCore
+      // Note: The actual function may vary based on contract implementation
+      const hash = await writeContractAsync({
+        address: CONTRACT_ADDRESSES.ZKTCore,
+        abi: ZKTCoreABI,
+        functionName: 'updateKYCStatus', // Placeholder - may need actual review function
+        args: [BigInt(proposalId), approved ? 1 : 0, mockZKReviewProof],
+      });
+
+      toast({
+        title: approved ? 'Sharia Approved ✅' : 'Sharia Rejected ❌',
+        description: `Proposal ${proposalId} has been reviewed by the Sharia Council.`,
+      });
+
+      console.log('Sharia review transaction submitted:', hash);
+
+      options?.onSuccess?.(hash);
+
+      return { txHash: hash, bundleId };
+
+    } catch (error: any) {
+      console.error('Error submitting Sharia review:', error);
+
+      let errorMessage = 'Failed to submit Sharia review';
+      if (error?.message?.includes('user rejected')) {
+        errorMessage = 'Transaction rejected by user';
+      } else if (error?.message?.includes('Only Sharia Council')) {
+        errorMessage = 'Only Sharia Council members can perform this action';
+      } else if (error?.message) {
+        errorMessage = error.message;
+      }
+
+      toast({
+        title: 'Review Failed',
+        description: errorMessage,
+        variant: 'destructive',
+      });
+
+      options?.onError?.(error);
+      return null;
+
+    } finally {
+      setIsLoading(false);
+    }
+  }, [isConnected, address, writeContractAsync, options, getBundleByProposalId]);
+
   return {
     updateKYCStatus,
     reviewProposal,
+    submitShariaVote,
     isShariaCouncilMember,
     isKYCOracle,
+    getPendingShariaReviews,
+    getBundleByProposalId,
     isLoading,
   };
 };

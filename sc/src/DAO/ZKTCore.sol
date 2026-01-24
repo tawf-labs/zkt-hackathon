@@ -91,7 +91,8 @@ contract ZKTCore is AccessControl {
         uint256 fundingGoal,
         bool isEmergency,
         bytes32 mockZKKYCProof,
-        string[] memory zakatChecklistItems
+        string[] memory zakatChecklistItems,
+        string memory metadataURI
     ) external onlyRole(ORGANIZER_ROLE) returns (uint256) {
         return proposalManager.createProposal(
             msg.sender,  // Pass actual caller as organizer
@@ -100,7 +101,8 @@ contract ZKTCore is AccessControl {
             fundingGoal,
             isEmergency,
             mockZKKYCProof,
-            zakatChecklistItems
+            zakatChecklistItems,
+            metadataURI
         );
     }
     
@@ -168,15 +170,27 @@ contract ZKTCore is AccessControl {
     function donate(uint256 poolId, uint256 amount, string memory ipfsCID) external {
         poolManager.donate(msg.sender, poolId, amount, ipfsCID);
     }
+
+    function donatePrivate(uint256 poolId, uint256 amount, bytes32 commitment, string memory ipfsCID) external {
+        poolManager.donatePrivate(msg.sender, poolId, amount, commitment, ipfsCID);
+    }
     
     function withdrawFunds(uint256 poolId) external {
         poolManager.withdrawFunds(msg.sender, poolId);
     }
     
     // ============ View Functions ============
-    
+
     function proposalCount() external view returns (uint256) {
         return proposalManager.proposalCount();
+    }
+
+    function poolCount() external view returns (uint256) {
+        return poolManager.poolCount();
+    }
+
+    function bundleCount() external view returns (uint256) {
+        return shariaReviewManager.bundleCount();
     }
     
     function getProposal(uint256 proposalId) external view returns (IProposalManager.Proposal memory) {

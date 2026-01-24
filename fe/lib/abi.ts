@@ -27,6 +27,13 @@ export const ZKTCoreABI = [
   },
   {
     type: 'function',
+    name: 'bundleCount',
+    inputs: [],
+    outputs: [{ name: '', type: 'uint256', internalType: 'uint256' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
     name: 'getProposal',
     inputs: [{ name: '_proposalId', type: 'uint256', internalType: 'uint256' }],
     outputs: [
@@ -54,6 +61,7 @@ export const ZKTCoreABI = [
           { name: 'votesAgainst', type: 'uint256', internalType: 'uint256' },
           { name: 'votesAbstain', type: 'uint256', internalType: 'uint256' },
           { name: 'communityVotePassed', type: 'bool', internalType: 'bool' },
+          { name: 'metadataURI', type: 'string', internalType: 'string' },
         ],
       },
     ],
@@ -117,6 +125,7 @@ export const ZKTCoreABI = [
       { name: '_isEmergency', type: 'bool', internalType: 'bool' },
       { name: '_mockZKKYCProof', type: 'string', internalType: 'string' },
       { name: '_zakatChecklistItems', type: 'string[]', internalType: 'string[]' },
+      { name: '_metadataURI', type: 'string', internalType: 'string' },
     ],
     outputs: [],
     stateMutability: 'nonpayable',
@@ -171,6 +180,18 @@ export const ZKTCoreABI = [
     inputs: [
       { name: '_poolId', type: 'uint256', internalType: 'uint256' },
       { name: '_amount', type: 'uint256', internalType: 'uint256' },
+      { name: '_ipfsCID', type: 'string', internalType: 'string' },
+    ],
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    name: 'donatePrivate',
+    inputs: [
+      { name: '_poolId', type: 'uint256', internalType: 'uint256' },
+      { name: '_amount', type: 'uint256', internalType: 'uint256' },
+      { name: '_commitment', type: 'bytes32', internalType: 'bytes32' },
       { name: '_ipfsCID', type: 'string', internalType: 'string' },
     ],
     outputs: [],

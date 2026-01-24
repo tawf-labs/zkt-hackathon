@@ -1,5 +1,6 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import { useReadContracts } from "wagmi";
 import { CONTRACT_ADDRESSES, ZKTCoreABI } from "@/lib/abi";
 import { Proposal, ProposalStatus, KYCStatus, CampaignType, proposalToProposalData, ProposalData } from "@/lib/types";
@@ -125,5 +126,109 @@ export function useProposalCount() {
   return {
     proposalCount: count as bigint,
     isLoading,
+  };
+}
+
+/**
+ * Hook to get proposals filtered by status
+ * @param status - The ProposalStatus to filter by
+ */
+export function useProposalsByStatus(status: ProposalStatus) {
+  const { proposalCount, isLoading: isLoadingCount } = useProposalCount();
+  const proposalCountNum = proposalCount ? Number(proposalCount) : 0;
+
+  // Fetch all proposals (in production, this would be optimized)
+  const proposalIds = proposalCountNum > 0 ? Array.from({ length: Math.min(proposalCountNum, 50) }, (_, i) => i) : [];
+  const { proposals, isLoading, refetch } = useProposals(proposalIds);
+
+  // Filter by status
+  const filteredProposals = proposals.filter(p => p.status === status);
+
+  return {
+    proposals: filteredProposals,
+    isLoading: isLoading || isLoadingCount,
+    refetch,
+  };
+}
+
+/**
+ * Hook to get proposals by organizer address
+ * @param organizerAddress - The address of the proposal organizer
+ */
+export function useProposalsByOrganizer(organizerAddress?: string) {
+  const { proposalCount, isLoading: isLoadingCount } = useProposalCount();
+  const proposalCountNum = proposalCount ? Number(proposalCount) : 0;
+
+  // Fetch all proposals (in production, this would be optimized with event filtering)
+  const proposalIds = proposalCountNum > 0 ? Array.from({ length: Math.min(proposalCountNum, 50) }, (_, i) => i) : [];
+  const { proposals, isLoading, refetch } = useProposals(proposalIds);
+
+  // Filter by organizer
+  const filteredProposals = organizerAddress
+    ? proposals.filter(p => p.organizer.toLowerCase() === organizerAddress.toLowerCase())
+    : proposals;
+
+  return {
+    proposals: filteredProposals,
+    isLoading: isLoading || isLoadingCount,
+    refetch,
+  };
+}
+
+/**
+ * Hook to get proposal timeline (status change history)
+ * Note: This requires tracking status change events or a contract mapping
+ * @param proposalId - The proposal ID to get timeline for
+ */
+export function useProposalTimeline(proposalId: number | bigint) {
+  const [timeline, setTimeline] = useState<Array<{
+    status: ProposalStatus;
+    timestamp: number;
+    transactionHash?: string;
+  }>>([]);
+  const [isLoading, setIsLoading] = useState(false);
+
+  useEffect(() => {
+    if (!proposalId && proposalId !== 0) return;
+
+    // In a full implementation, this would:
+    // 1. Query ProposalStatusUpdated events for this proposalId
+    // 2. Parse events to extract status, timestamp, and transaction hash
+    // 3. Return sorted timeline of status changes
+
+    // For now, returning empty array as placeholder
+    setTimeline([]);
+  }, [proposalId]);
+
+  return { timeline, isLoading };
+}
+
+/**
+ * Hook to get active proposals (in voting period)
+ */
+export function useActiveProposals() {
+  return useProposalsByStatus(ProposalStatus.CommunityVote);
+}
+
+/**
+ * Hook to get proposals pending review
+ */
+export function usePendingReviewProposals() {
+  return useProposalsByStatus(ProposalStatus.CommunityPassed);
+}
+
+/**
+ * Hook to get approved proposals
+ */
+export function useApprovedProposals() {
+  const { proposals, isLoading, refetch } = useProposalsByStatus(ProposalStatus.ShariaApproved);
+  // Also include PoolCreated and Completed as "approved"
+  const { proposals: poolProposals, isLoading: isLoadingPools } = useProposalsByStatus(ProposalStatus.PoolCreated);
+  const { proposals: completedProposals, isLoading: isLoadingCompleted } = useProposalsByStatus(ProposalStatus.Completed);
+
+  return {
+    proposals: [...proposals, ...poolProposals, ...completedProposals],
+    isLoading: isLoading || isLoadingPools || isLoadingCompleted,
+    refetch,
   };
 }

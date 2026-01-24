@@ -3,14 +3,13 @@
 import { useEffect, useRef } from 'react'
 import { usePublicClient } from 'wagmi'
 import { CONTRACT_ADDRESSES } from '@/lib/abi'
-import { supabase } from '@/lib/supabase-client'
 
 /**
  * Hook that listens for CampaignCreated events from the contract
  * Uses getLogs polling instead of watchContractEvent to avoid RPC filter expiration
- * 
- * NOTE: This hook is designed to be safely called in WalletStateController
- * All state updates are contained within effects, not during render
+ *
+ * NOTE: This hook logs on-chain events for monitoring
+ * All campaign data is stored on-chain or via IPFS (no database needed)
  */
 export const useCampaignEventListener = () => {
   const publicClient = usePublicClient()
@@ -37,7 +36,7 @@ export const useCampaignEventListener = () => {
         intervalRef.current = setInterval(async () => {
           try {
             const latestBlock = await publicClient.getBlockNumber()
-            
+
             if (latestBlock <= lastBlockRef.current) {
               return // No new blocks
             }
@@ -66,59 +65,17 @@ export const useCampaignEventListener = () => {
               console.log(`✅ Found ${logs.length} CampaignPoolCreated event(s)`)
             }
 
-            // Process each event
+            // Process each event - just log, no database needed
             for (const log of logs) {
               const poolId = log.args?.poolId as bigint
+              const proposalId = log.args?.proposalId as bigint
+              const campaignType = log.args?.campaignType as number
 
-              console.log('📢 CampaignPoolCreated event detected:', poolId.toString())
-
-              // Check if pool already exists in Supabase
-              try {
-                const { data, error } = await supabase
-                  .from('campaigns')
-                  .select('id, status')
-                  .eq('pool_id', poolId.toString())
-                  .single()
-
-                if (
-                  error &&
-                  error.code === 'PGRST116'
-                ) {
-                  console.log(
-                    '⚠️ Pool exists on-chain but not in Supabase:',
-                    poolId.toString()
-                  )
-                } else if (!error && data) {
-                  // Pool exists in Supabase
-                  if (data.status === 'pending_execution') {
-                    // Update status to 'active' since transaction executed
-                    console.log(
-                      '🔄 Updating campaign status to active:',
-                      poolId.toString()
-                    )
-                    
-                    const { error: updateError } = await supabase
-                      .from('campaigns')
-                      .update({ status: 'active' })
-                      .eq('pool_id', poolId.toString())
-                    
-                    if (updateError) {
-                      console.error('❌ Failed to update campaign status:', updateError)
-                    } else {
-                      console.log('✅ Campaign status updated to active - now visible in explorer!')
-                    }
-                  } else {
-                    console.log(
-                      '✅ Campaign already active in Supabase'
-                    )
-                  }
-                }
-              } catch (err) {
-                console.error(
-                  '❌ Error checking/updating campaign in Supabase:',
-                  err
-                )
-              }
+              console.log('📢 CampaignPoolCreated event detected:', {
+                poolId: poolId.toString(),
+                proposalId: proposalId.toString(),
+                campaignType: campaignType === 1 ? 'Zakat' : 'Normal',
+              })
             }
           } catch (pollError) {
             console.error('❌ Error polling for events:', pollError)

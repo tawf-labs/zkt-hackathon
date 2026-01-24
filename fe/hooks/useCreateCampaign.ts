@@ -3,10 +3,8 @@
 import { useCallback, useState } from 'react';
 import { useAccount } from 'wagmi';
 import { uploadFilesToPinata } from '@/lib/pinata-client';
-import { saveCampaignData, updateCampaignTxHash, type CampaignData } from '@/lib/supabase-client';
 import { toast } from '@/components/ui/use-toast';
 import { useCreateCampaignOnChain } from './useCreateCampaignOnChain';
-import { keccak256, stringToBytes } from 'viem';
 
 interface CreateCampaignParams {
   title: string;
@@ -20,18 +18,28 @@ interface CreateCampaignParams {
   tags: string[];
   startTime: number;
   endTime: number;
+  isEmergency?: boolean;
+  zakatChecklistItems?: string[];
 }
 
-// Generate unique campaign identifier
-const generateCampaignIdentifier = (walletAddress: string, title: string): string => {
-  const timestamp = Date.now();
-  return `${walletAddress}-${title}-${timestamp}`;
-};
+interface CampaignMetadata {
+  title: string;
+  description: string;
+  category: string;
+  location: string;
+  goal: number;
+  organizationName: string;
+  organizationVerified: boolean;
+  imageUrls: string[];
+  tags: string[];
+  startTime: number;
+  endTime: number;
+}
 
 export const useCreateCampaign = () => {
   const { address, isConnected } = useAccount();
   const { createCampaignOnChain, isLoading: isOnChainLoading } = useCreateCampaignOnChain();
-  
+
   const [isLoading, setIsLoading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [currentStep, setCurrentStep] = useState<string>('');
@@ -52,25 +60,11 @@ export const useCreateCampaign = () => {
 
       try {
         // ============================================
-        // STEP 1: Generate unique campaign ID
-        // ============================================
-        setCurrentStep('Generating campaign ID...');
-        setUploadProgress(10);
-        
-        const campaignIdentifier = generateCampaignIdentifier(address, params.title);
-        const campaignIdHash = keccak256(stringToBytes(campaignIdentifier));
-        
-        console.log('📝 Campaign ID generated:', {
-          identifier: campaignIdentifier,
-          hash: campaignIdHash,
-        });
-
-        // ============================================
-        // STEP 2: Upload images to IPFS/Pinata
+        // STEP 1: Upload images to IPFS/Pinata
         // ============================================
         setCurrentStep('Uploading images...');
-        setUploadProgress(25);
-        
+        setUploadProgress(20);
+
         let imageUrls: string[] = [];
         if (params.imageFiles.length > 0) {
           imageUrls = await uploadFilesToPinata(params.imageFiles);
@@ -78,32 +72,12 @@ export const useCreateCampaign = () => {
         }
 
         // ============================================
-        // STEP 3: Create campaign on blockchain FIRST
+        // STEP 2: Upload metadata to IPFS
         // ============================================
-        setCurrentStep('Creating campaign on blockchain...');
-        setUploadProgress(50);
+        setCurrentStep('Uploading metadata...');
+        setUploadProgress(40);
 
-        const onChainResult = await createCampaignOnChain({
-          campaignId: campaignIdentifier,
-          startTime: params.startTime,
-          endTime: params.endTime,
-        });
-
-        if (!onChainResult) {
-          throw new Error('Failed to create campaign on blockchain');
-        }
-
-        console.log('⛓️ On-chain creation successful:', onChainResult);
-
-        // ============================================
-        // STEP 4: Save metadata to Supabase
-        // ============================================
-        setCurrentStep('Saving campaign data...');
-        setUploadProgress(75);
-
-        const campaignData: CampaignData = {
-          campaignId: campaignIdentifier,
-          campaignIdHash: onChainResult.campaignIdBytes32,
+        const metadata: CampaignMetadata = {
           title: params.title,
           description: params.description,
           category: params.category,
@@ -115,42 +89,64 @@ export const useCreateCampaign = () => {
           tags: params.tags,
           startTime: params.startTime,
           endTime: params.endTime,
-          txHash: onChainResult.txHash,
-          creatorAddress: address,
-          status: 'active',
         };
 
-        const supabaseResult = await saveCampaignData(campaignData);
-        
-        console.log('💾 Supabase save successful:', supabaseResult);
+        // Upload metadata JSON to IPFS
+        const metadataBlob = new Blob([JSON.stringify(metadata)], { type: 'application/json' });
+        const metadataFile = new File([metadataBlob], 'metadata.json', { type: 'application/json' });
+        const metadataUploads = await uploadFilesToPinata([metadataFile]);
+        const metadataURI = `ipfs://${metadataUploads[0]}`;
+
+        console.log('📄 Metadata uploaded:', metadataURI);
 
         // ============================================
-        // STEP 5: Complete
+        // STEP 3: Create proposal on blockchain
+        // ============================================
+        setCurrentStep('Creating proposal on blockchain...');
+        setUploadProgress(60);
+
+        const onChainResult = await createCampaignOnChain({
+          title: params.title,
+          description: params.description,
+          fundingGoal: params.goal,
+          isEmergency: params.isEmergency || false,
+          zakatChecklistItems: params.zakatChecklistItems || [],
+          metadataURI,
+        });
+
+        if (!onChainResult) {
+          throw new Error('Failed to create proposal on blockchain');
+        }
+
+        console.log('⛓️ On-chain creation successful:', onChainResult);
+
+        // ============================================
+        // STEP 4: Complete
         // ============================================
         setCurrentStep('Complete!');
         setUploadProgress(100);
 
         toast({
           title: 'Success! 🎉',
-          description: 'Campaign created successfully on blockchain and database',
+          description: 'Proposal created successfully on blockchain',
         });
 
         return {
-          ...campaignData,
-          ...onChainResult,
+          metadataURI,
+          txHash: onChainResult.txHash,
         };
 
       } catch (error) {
-        console.error('❌ Campaign creation failed:', error);
+        console.error('❌ Proposal creation failed:', error);
 
         // Detailed error message
-        let errorMessage = 'Failed to create campaign';
+        let errorMessage = 'Failed to create proposal';
         if (error instanceof Error) {
           errorMessage = error.message;
         }
 
         toast({
-          title: 'Campaign Creation Failed',
+          title: 'Proposal Creation Failed',
           description: errorMessage,
           variant: 'destructive',
         });

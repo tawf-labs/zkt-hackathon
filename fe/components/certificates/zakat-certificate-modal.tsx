@@ -1,0 +1,246 @@
+"use client";
+
+import { useState, useEffect } from "react";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
+import { Loader2, FileText, Shield, Download, Calendar, Hash } from "lucide-react";
+import { useZakatCertificate } from "@/hooks/useZakatCertificate";
+import { formatAddress } from "@/lib/abi";
+
+interface ZakatCertificateModalProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  donationDetails: {
+    donorAddress: string;
+    poolId: number;
+    amount: number;
+    campaignTitle: string;
+    campaignType: string;
+    transactionHash: string;
+  };
+  onCertificateGenerated?: (certificate: any) => void;
+}
+
+export function ZakatCertificateModal({
+  open,
+  onOpenChange,
+  donationDetails,
+  onCertificateGenerated,
+}: ZakatCertificateModalProps) {
+  const [hasConsented, setHasConsented] = useState(false);
+  const [hasReadNotice, setHasReadNotice] = useState(false);
+
+  const { generateCertificate, isGenerating, certificate } = useZakatCertificate();
+
+  const handleGenerateCertificate = async () => {
+    if (!hasConsented) {
+      return;
+    }
+
+    const result = await generateCertificate(donationDetails);
+
+    if (result) {
+      if (onCertificateGenerated) {
+        onCertificateGenerated(result);
+      }
+
+      // Close modal after successful generation (delay to show success)
+      setTimeout(() => {
+        onOpenChange(false);
+      }, 2000);
+    }
+  };
+
+  const handleClose = () => {
+    // Reset state when closing
+    setHasConsented(false);
+    setHasReadNotice(false);
+    onOpenChange(false);
+  };
+
+  // Reset consent when modal opens
+  useEffect(() => {
+    if (!open) {
+      setHasConsented(false);
+      setHasReadNotice(false);
+    }
+  }, [open]);
+
+  return (
+    <Dialog open={open} onOpenChange={handleClose}>
+      <DialogContent className="sm:max-w-[600px]">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <FileText className="h-5 w-5 text-primary" />
+            Zakat Certificate
+          </DialogTitle>
+          <DialogDescription>
+            Optional official certificate for your donation record
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-6 py-4">
+          {/* Certificate Preview */}
+          <div className="bg-gradient-to-br from-emerald-50 to-teal-50 border-2 border-emerald-200 rounded-lg p-6 space-y-4">
+            <div className="text-center space-y-2">
+              <div className="inline-flex items-center justify-center w-12 h-12 bg-emerald-100 rounded-full">
+                <Shield className="h-6 w-6 text-emerald-700" />
+              </div>
+              <h3 className="text-xl font-bold text-emerald-900">Zakat Certificate</h3>
+              <p className="text-sm text-emerald-700">Official Donation Receipt</p>
+            </div>
+
+            <div className="border-t border-emerald-200 pt-4 space-y-2 text-sm">
+              <div className="flex justify-between">
+                <span className="text-emerald-700">Certificate ID:</span>
+                <span className="font-mono font-semibold text-emerald-900">
+                  {certificate ? certificate.id : "ZAKT-XXXXXXXXX"}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-emerald-700">Donation Amount:</span>
+                <span className="font-semibold text-emerald-900">
+                  {donationDetails.amount.toLocaleString('id-ID')} IDRX
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-emerald-700">Campaign:</span>
+                <span className="font-semibold text-emerald-900 max-w-[200px] truncate">
+                  {donationDetails.campaignTitle}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-emerald-700">Type:</span>
+                <span className="font-semibold text-emerald-900">
+                  {donationDetails.campaignType === 1 ? 'Zakat Compliant' : 'General Donation'}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-emerald-700">Transaction:</span>
+                <span className="font-mono text-xs text-emerald-600 truncate max-w-[200px]">
+                  {donationDetails.transactionHash}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-emerald-700">Valid Until:</span>
+                <span className="font-semibold text-emerald-900">
+                  {certificate
+                    ? new Date(certificate.expiresAt).toLocaleDateString('id-ID', {
+                        year: 'numeric',
+                        month: 'long',
+                        day: 'numeric',
+                      })
+                    : '1 Year from Issue'}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Privacy Notice */}
+          <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 space-y-2">
+            <div className="flex items-start gap-2">
+              <Shield className="h-4 w-4 text-amber-600 mt-0.5 flex-shrink-0" />
+              <div>
+                <p className="text-sm font-semibold text-amber-900">
+                  Privacy Notice
+                </p>
+                <p className="text-xs text-amber-800 mt-1">
+                  To generate this certificate, the following information will be stored in a secure database:
+                </p>
+                <ul className="list-disc list-inside text-xs text-amber-800 mt-1 space-y-0.5 ml-4">
+                  <li>Your wallet address ({formatAddress(donationDetails.donorAddress)})</li>
+                  <li>Donation amount and campaign details</li>
+                  <li>Transaction hash for verification</li>
+                  <li>Certificate generation timestamp</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+
+          {/* Purpose Notice */}
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+            <p className="text-xs text-blue-800">
+              <strong>Why this data?</strong> Zakat certificates may be used for tax purposes
+              or official documentation. Your data is only stored when you explicitly consent
+              to certificate generation.
+            </p>
+          </div>
+
+          {/* Consent Checkbox */}
+          <div className="flex items-start space-x-3">
+            <Checkbox
+              id="certificate-consent"
+              checked={hasConsented}
+              onCheckedChange={setHasConsented}
+              disabled={isGenerating}
+              className="mt-1"
+            />
+            <div className="flex-1">
+              <Label
+                htmlFor="certificate-consent"
+                className="text-sm font-medium cursor-pointer"
+              >
+                I consent to storing my donation information for Zakat certificate generation
+              </Label>
+              <p className="text-xs text-muted-foreground mt-1">
+                This information will only be used to generate and verify your official Zakat certificate.
+              </p>
+            </div>
+          </div>
+
+          {/* Action Buttons */}
+          <div className="flex gap-3">
+            <Button
+              variant="outline"
+              className="flex-1"
+              onClick={handleClose}
+              disabled={isGenerating}
+            >
+              Skip
+            </Button>
+            <Button
+              className="flex-1 bg-emerald-600 hover:bg-emerald-700"
+              onClick={handleGenerateCertificate}
+              disabled={!hasConsented || isGenerating}
+            >
+              {isGenerating ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Generating...
+                </>
+              ) : certificate ? (
+                <>
+                  <Download className="mr-2 h-4 w-4" />
+                  Download Certificate
+                </>
+              ) : (
+                <>
+                  <FileText className="mr-2 h-4 w-4" />
+                  Generate Certificate
+                </>
+              )}
+            </Button>
+          </div>
+
+          {/* Success Message */}
+          {certificate && (
+            <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3 flex items-start gap-2">
+              <Shield className="h-5 w-5 text-emerald-600 flex-shrink-0" />
+              <div>
+                <p className="text-sm font-semibold text-emerald-900">
+                  Certificate Generated Successfully!
+                </p>
+                <p className="text-xs text-emerald-700 mt-1">
+                  Your certificate ID is <span className="font-mono">{certificate.id}</span>.
+                  Keep this for your tax records.
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}

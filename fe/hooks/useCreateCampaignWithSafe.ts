@@ -7,21 +7,15 @@ import SafeApiKit from '@safe-global/api-kit'
 import Safe from '@safe-global/protocol-kit'
 import { ethers } from 'ethers'
 import { ZKTCoreABI, CONTRACT_ADDRESSES } from '@/lib/abi'
-import { saveCampaignData, type CampaignData } from '@/lib/supabase-client'
+import { uploadFilesToPinata } from '@/lib/pinata-client'
 
 export interface CreateCampaignWithSafeParams {
-  campaignId: string
-  startTime: number
-  endTime: number
-  title?: string
-  description?: string
-  category?: string
-  location?: string
-  goal?: number
-  organizationName?: string
-  organizationVerified?: boolean
-  imageUrls?: string[]
-  tags?: string[]
+  title: string
+  description: string
+  fundingGoal: number
+  isEmergency: boolean
+  zakatChecklistItems: string[]
+  metadataURI: string
 }
 
 export interface CreateCampaignWithSafeResult {
@@ -36,14 +30,15 @@ const SAFE_ADDRESS = '0xD264BE80817EAfaC5F7575698913FEc4cB38a016'
 const CONTRACT_ADDRESS = CONTRACT_ADDRESSES.ZKTCore
 
 /**
- * Hook for creating campaigns via Safe multisig
+ * Hook for creating proposals via Safe multisig
+ * All metadata is stored on-chain or via IPFS (no database)
  */
 export const useCreateCampaignWithSafe = (): CreateCampaignWithSafeResult => {
   const [isHydrated, setIsHydrated] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [safeTxHash, setSafeTxHash] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
-  
+
   const { address, isConnected } = useAccount()
   const { data: walletClient } = useWalletClient()
 
@@ -61,20 +56,9 @@ export const useCreateCampaignWithSafe = (): CreateCampaignWithSafeResult => {
         throw new Error('Wallet client not available')
       }
 
-      // Validate params
-      if (!params.campaignId || params.campaignId.length === 0) {
-        throw new Error('Campaign ID is required')
-      }
-      if (!params.startTime || params.startTime <= 0) {
-        throw new Error('Start time must be a valid timestamp')
-      }
-      if (!params.endTime || params.endTime <= params.startTime) {
-        throw new Error('End time must be after start time')
-      }
-
       setIsLoading(true)
       setError(null)
-      
+
       try {
         console.log('🔐 Initializing Safe Protocol Kit...')
         console.log('Connected wallet:', address)
@@ -94,19 +78,21 @@ export const useCreateCampaignWithSafe = (): CreateCampaignWithSafeResult => {
 
         // Encode transaction data using ZKTCore contract ABI (ethers v5)
         const iface = new ethers.utils.Interface(ZKTCoreABI)
-        
+
+        const fundingGoalWei = ethers.utils.parseEther(params.fundingGoal.toString())
+
         const data = iface.encodeFunctionData('createProposal', [
-          params.title || 'Campaign',
-          params.description || '',
-          ethers.utils.parseEther((params.goal || 0).toString()),
-          false, // isEmergency
-          '', // mockZKKYCProof
-          params.tags || [] // zakatChecklistItems
+          params.title,
+          params.description,
+          fundingGoalWei,
+          params.isEmergency,
+          '0x0000000000000000000000000000000000000000000000000000000000000000', // mockZKKYCProof
+          params.zakatChecklistItems,
+          params.metadataURI,
         ])
 
-        console.log('📝 Campaign ID:', params.campaignId)
-        console.log('📅 Start Time:', new Date(params.startTime * 1000).toISOString())
-        console.log('📅 End Time:', new Date(params.endTime * 1000).toISOString())
+        console.log('📝 Proposal Title:', params.title)
+        console.log('📝 Metadata URI:', params.metadataURI)
 
         console.log('📝 Creating Safe transaction...')
 
@@ -121,7 +107,7 @@ export const useCreateCampaignWithSafe = (): CreateCampaignWithSafeResult => {
 
         console.log('✍️ Signing transaction...')
         const signedSafeTx = await protocolKit.signTransaction(safeTransaction)
-        
+
         const safeTxHash = await protocolKit.getTransactionHash(signedSafeTx)
         console.log('✅ Transaction signed! Hash:', safeTxHash)
 
@@ -151,51 +137,13 @@ export const useCreateCampaignWithSafe = (): CreateCampaignWithSafeResult => {
         console.log('🎉 Transaction proposed!')
         setSafeTxHash(safeTxHash)
 
-        // Save campaign metadata to Supabase immediately after Safe approval
-        if (params.title && params.description && params.location && params.organizationName) {
-          try {
-            console.log('💾 Saving campaign metadata to Supabase...')
-            const campaignData: CampaignData = {
-              campaignId: params.campaignId,
-              title: params.title,
-              description: params.description,
-              category: params.category || 'Other',
-              location: params.location,
-              goal: params.goal || 0,
-              organizationName: params.organizationName,
-              organizationVerified: params.organizationVerified || false,
-              imageUrls: params.imageUrls || [],
-              tags: params.tags || [],
-              startTime: params.startTime,
-              endTime: params.endTime,
-              status: 'pending_execution',
-            }
-            
-            await saveCampaignData(campaignData)
-            console.log('✅ Campaign metadata saved to Supabase')
-            
-            toast({
-              title: '✅ Campaign Metadata Saved!',
-              description: 'Campaign will appear after Safe executes the transaction.',
-            })
-          } catch (dbError) {
-            console.error('⚠️ Warning: Failed to save campaign metadata:', dbError)
-            // Don't throw error - the on-chain transaction is still valid
-            toast({
-              title: '⚠️ Metadata Save Failed',
-              description: 'Campaign created on-chain but metadata not saved. You may need to try again.',
-              variant: 'destructive',
-            })
-          }
-        }
-
         toast({
-          title: '✅ Campaign Proposed!',
-          description: 'Transaction proposed to Safe. Waiting for confirmations from all signers.',
+          title: '✅ Proposal Created!',
+          description: 'Proposal created via Safe multisig. Waiting for confirmations from all signers.',
         })
 
         console.log('⏳ Safe transaction proposed - waiting for execution...')
-        console.log('Campaign ID:', params.campaignId)
+        console.log('Proposal Title:', params.title)
         console.log('Safe TX Hash:', safeTxHash)
 
         return { safeTxHash }
@@ -205,7 +153,7 @@ export const useCreateCampaignWithSafe = (): CreateCampaignWithSafeResult => {
         console.error('❌ Error:', errorMsg)
         console.error('Full error:', err)
         setError(errorMsg)
-        
+
         toast({
           title: '❌ Failed',
           description: errorMsg,

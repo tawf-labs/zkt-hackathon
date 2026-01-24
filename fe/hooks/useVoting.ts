@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useState } from 'react';
+import { useCallback, useState, useEffect } from 'react';
 import { useWriteContract, useAccount, useWaitForTransactionReceipt, useReadContract } from 'wagmi';
 import { CONTRACT_ADDRESSES, ZKTCoreABI } from '@/lib/abi';
 import { VoteSupport, getVoteSupportLabel } from '@/lib/types';
@@ -259,3 +259,78 @@ export const useVoting = (options?: UseVotingOptions) => {
     pendingVoteProposalId,
   };
 };
+
+/**
+ * Get voter history - proposals a user has voted on
+ * Note: This requires tracking VoteCast events or a contract mapping
+ */
+export function useVoterHistory(voterAddress?: string) {
+  const [votedProposals, setVotedProposals] = useState<Array<{proposalId: bigint; support: number; timestamp: number}>>([]);
+  const [isLoading, setIsLoading] = useState(false);
+
+  useEffect(() => {
+    if (!voterAddress) return;
+
+    // In a full implementation, this would:
+    // 1. Query VoteCast events filtered by voter address
+    // 2. Parse the events to extract proposalId, support, and timestamp
+    // 3. Return the sorted list
+
+    // For now, returning empty array as placeholder
+    setVotedProposals([]);
+  }, [voterAddress]);
+
+  return { votedProposals, isLoading };
+}
+
+/**
+ * Get voters for a specific proposal
+ * Note: This requires a contract function to return voters or event querying
+ */
+export function useProposalVoters(proposalId: number | bigint) {
+  const [voters, setVoters] = useState<Array<{address: string; support: number; weight: bigint}>>([]);
+  const [isLoading, setIsLoading] = useState(false);
+
+  useEffect(() => {
+    if (!proposalId && proposalId !== 0) return;
+
+    // In a full implementation, this would:
+    // 1. Query VoteCast events filtered by proposalId
+    // 2. Parse the events to extract voter address, support, and vote weight
+    // 3. Return the list of voters
+
+    // For now, returning empty array as placeholder
+    setVoters([]);
+  }, [proposalId]);
+
+  return { voters, isLoading, voterCount: voters.length };
+}
+
+/**
+ * Check if a user can vote on a proposal
+ * Validates: connection, voting period, hasn't voted yet, has voting power
+ */
+export function useCanUserVote(proposalId: number | bigint, userAddress?: string) {
+  const [canVote, setCanVote] = useState(false);
+  const [reason, setReason] = useState<string>('');
+
+  useEffect(() => {
+    if (!userAddress) {
+      setCanVote(false);
+      setReason('Wallet not connected');
+      return;
+    }
+
+    // In a full implementation, this would:
+    // 1. Check if proposal is in CommunityVote status
+    // 2. Check if user hasn't voted yet (hasVoted mapping)
+    // 3. Check if user has voting power > 0
+    // 4. Check if current time is within voting period
+
+    // For now, always returning true as placeholder
+    setCanVote(true);
+    setReason('');
+  }, [proposalId, userAddress]);
+
+  return { canVote, reason };
+}
