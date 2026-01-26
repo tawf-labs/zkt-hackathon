@@ -334,7 +334,7 @@ function voteOnCampaignExtension(uint256 poolId, uint256 newDeadline, bool appro
 
 | Campaign Type | Manager | Recipient KYC Required | Voting Period | Sharia Review | Time Limit |
 |---------------|---------|------------------------|---------------|----------------|------------|
-| **Normal** | PoolManager | Yes (verify recipients) | 7 days | Standard bundle | None |
+| **Normal** | PoolManager | Yes (verify recipients) | 7 days | Standard bundle | Milestone-based tranches |
 | **Zakat** | ZakatEscrowManager | Yes (verify recipients) | 7 days | Standard bundle | 30-day distribution |
 | **Emergency** | EmergencyEscrowManager | No (disaster victims) | 24-48 hours (prioritized) | SKIPS 7-day period | DRCP rules |
 
@@ -401,15 +401,16 @@ flowchart TD
     AG -->|No| AI[Redistribute to Fallback]
 
     V2 --> AB2[Normal Pool Rules]
-    AB2 --> AC2[Unlimited Fundraising]
+    AB2 --> AC2[Milestone-based Fundraising]
     AC2 --> AD2[Tranche-based Distribution]
-    AD2 --> AE2[Organizer Withdraws by Milestones]
-    AE2 --> AF2[Community Reviews Progress]
-    AF2 --> AG2{Release Next Tranche?}
-    AG2 -->|Yes| AH2[Next Milestone Funded]
-    AG2 -->|No| AI2[Hold Remaining Funds]
-    AH2 --> AF2
-    AI2 --> AJ2[Dispute Resolution]
+    AD2 --> AE2[ZKT-RECEIPT Holders Vote on Milestones]
+    AE2 --> AF2{Milestone Completed?}
+    AF2 -->|Yes| AG2[Release Next Tranche]
+    AF2 -->|No| AH2[Hold Remaining Funds]
+    AG2 --> AI2{More Milestones?}
+    AI2 -->|Yes| AE2
+    AI2 -->|No| AJ2[Campaign Completed]
+    AH2 --> AK2[Dispute Resolution]
 ```
 
 ### Step-by-Step Breakdown
@@ -457,14 +458,14 @@ uint256 proposalId = zktCore.createProposal(
 
 **Normal/Zakat Proposal:**
 ```solidity
-// Organizer creates zakat proposal
+// Organizer creates normal proposal with milestones
 uint256 proposalId = zktCore.createProposal(
     "Clean Water Mosque Project",     // title
     "Build wells for 5 villages...",  // description
     100000 * 10**18,                  // fundingGoal (100K IDRX)
     false,                            // isEmergency = FALSE
     bytes32(0),                       // mockZKKYCProof (for recipients)
-    ["Must reach poor only", "No overhead deducted"],  // zakatChecklistItems
+    ["Milestone 1: Land acquisition (30 days)", "Milestone 2: Well drilling (60 days)", "Milestone 3: Water testing (90 days)"],  // milestones
     "ipfs://Qm..."                    // metadataURI
 );
 // Status: Draft, KYCStatus: Pending (recipients need verification)
@@ -567,8 +568,18 @@ zktCore.executeParametricRelease(poolId, amount, "GPS coordinates verified");
 
 **Normal Pool:**
 ```solidity
-// Organizer can withdraw anytime
-zktCore.withdrawFunds(poolId);
+// Organizer can only withdraw completed milestone tranches
+zktCore.requestTrancheRelease(poolId, milestoneId, "ipfs://QmProofOfCompletion...");
+
+// ZKT-RECEIPT holders vote on milestone completion
+zktCore.voteOnMilestoneCompletion(poolId, milestoneId, true); // true = completed
+
+// If milestone approved, organizer can withdraw that tranche
+zktCore.withdrawTranche(poolId, milestoneId);
+
+// If milestone disputed or failed
+zktCore.disputeMilestone(poolId, milestoneId, "ipfs://QmDispute...");
+// Remaining funds held until resolution
 ```
 
 **Zakat Pool:**
@@ -599,11 +610,13 @@ zktCore.executeZakatRedistribution(poolId);
 | **Recipient KYC** | Not required (disaster victims) | Required (verify recipients) | Required (verify recipients) |
 | **Voting Period** | 24-48 hours (prioritized queue) | 7 days | 7 days |
 | **Sharia Review** | SKIPPED (immediate after vote) | Standard bundle | Standard bundle |
-| **Distribution** | Parametric/Instant | 30-day limit | No limit |
-| **Grace Period** | N/A | 7 days | N/A |
-| **Extension** | N/A | +14 days (one-time) | N/A |
-| **Redistribution** | DRCP rules | To fallback pool | Manual only |
-| **Use Case** | Disaster relief, urgent aid | Zakat obligations | General fundraising |
+| **Distribution** | Parametric/Instant | 30-day limit | Milestone-based tranches |
+| **Time Limits** | DRCP rules | 30 days (+14 extension) | Milestone deadlines |
+| **Grace Period** | N/A | 7 days | Per milestone |
+| **Extension** | N/A | +14 days (one-time) | Milestone-specific |
+| **Redistribution** | DRCP rules | To fallback pool | Dispute resolution |
+| **Oversight** | Council/Parametric | Automatic timeout | ZKT-RECEIPT holder voting |
+| **Use Case** | Disaster relief, urgent aid | Zakat obligations | General fundraising with accountability |
 
 ### Emergency Campaign (DRCP Model)
 
@@ -780,7 +793,10 @@ enum CampaignType {
 | `createNormalPool(uint256)` | Admin | Create Normal campaign pool (no fallback needed) |
 | `donate(address, uint256, uint256, string)` | PoolManager | Accept donations |
 | `donatePrivate(...)` | PoolManager | Accept private donations |
-| `withdrawFunds(address, uint256)` | Organizer | Withdraw all funds |
+| `requestTrancheRelease(uint256, uint256, string)` | Organizer | Request release of specific milestone tranche |
+| `voteOnMilestoneCompletion(uint256, uint256, bool)` | ZKT-RECEIPT holders | Vote on milestone completion |
+| `withdrawTranche(uint256, uint256)` | Organizer | Withdraw approved milestone tranche |
+| `disputeMilestone(uint256, uint256, string)` | ZKT-RECEIPT holders | Dispute milestone completion |
 
 #### ZakatEscrowManager.sol (Zakat Campaigns)
 
