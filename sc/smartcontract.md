@@ -58,11 +58,21 @@ renounceAdminRole()                 // Irreversible, admin role eliminated
 
 ### Token Ecosystem
 
-| Token | Type | Purpose | Transferable |
-|-------|------|---------|--------------|
-| **IDRX** | ERC20 | Donation currency (stablecoin) | Yes |
-| **vZKT** | ERC721 (NFT) | Governance voting power NFT | No |
-| **ZKT-RECEIPT** | ERC721 (Soulbound) | Donation receipt NFT | No |
+| Token | Type | Purpose | How to Get | Transferable |
+|-------|------|---------|------------|--------------|
+| **IDRX** | ERC20 | Donation currency (stablecoin) | Purchase/exchange | Yes |
+| **vZKT** | ERC721 (NFT) | Governance voting power NFT | Earned from donation + zkt.app interaction | No |
+| **ZKT-RECEIPT** | ERC721 (Soulbound) | Donation receipt NFT | Auto-minted when donating | No |
+
+### Key Differences Between NFTs:
+
+| Aspect | vZKT (Voting NFT) | ZKT-RECEIPT (Donation NFT) |
+|--------|------------------|---------------------------|
+| **Purpose** | Governance participation | Proof of donation |
+| **When Received** | Earned from donation + zkt.app interaction | Auto-minted on donation |
+| **Voting Power** | Yes (tiered: 1-3 votes based on interaction quality) | No voting power |
+| **Requirement** | Must donate + interact with zkt.app | Must donate to campaign |
+| **Metadata** | Voting tier, donation history, interaction score | Donation amount, campaign, timestamp |
 
 ---
 
@@ -169,7 +179,42 @@ bytes32 public constant KYC_ORACLE_ROLE = keccak256("KYC_ORACLE_ROLE");
 bytes32 public constant SHARIA_COUNCIL_ROLE = keccak256("SHARIA_COUNCIL_ROLE");
 ```
 
-### How Roles Are Granted
+### How Users Get Each NFT:
+
+#### **Getting vZKT Voting NFT:**
+```solidity
+// Tier 1: Basic Donor (1 vote) - Must donate + basic interaction
+function earnBasicVotingNFT(uint256 donationAmount) external
+// Requires: Minimum donation + account verification
+
+// Tier 2: Active Participant (2 votes) - Donation + KYC + governance participation  
+function earnActiveVotingNFT(uint256 donationAmount) external
+// Requires: Donation + KYC verified + voted on 3+ proposals
+
+// Tier 3: Community Leader (3 votes) - Donation + proven track record
+function earnLeaderVotingNFT(uint256 donationAmount) external  
+// Requires: Donation + successful organizer + community endorsements
+
+// Note: Sharia Council and Core Contributors get separate role-based permissions
+// They are NOT earned through NFTs but appointed by admin/DAO governance
+```
+
+#### **Getting ZKT-RECEIPT Donation NFT:**
+```solidity
+// Automatic when donating to any campaign
+idrxToken.approve(address(zktCore), amount);
+zktCore.donate(poolId, amount, "ipfs://QmReceiptMetadata...");
+// Auto-mints ZKT-RECEIPT NFT as proof of donation
+```
+
+#### **Example User Journey:**
+```
+1. User donates to campaign → Gets ZKT-RECEIPT NFT as proof
+2. User completes KYC + interacts with zkt.app → Earns Tier 1 vZKT NFT (1 vote)
+3. User votes on 3+ proposals → Upgrades to Tier 2 vZKT NFT (2 votes)
+4. User becomes successful organizer → Upgrades to Tier 3 vZKT NFT (3 votes)
+5. User accumulates multiple ZKT-RECEIPT NFTs from various donations
+```
 
 ```solidity
 // ========== DECENTRALIZED ORGANIZER APPROVAL ==========
@@ -205,9 +250,25 @@ function transferAdminToDAO(address daoGovernance) external onlyRole(DEFAULT_ADM
 // Renounce centralized admin role (final step of decentralization)
 function renounceAdminRole() external onlyRole(DEFAULT_ADMIN_ROLE)
 
-// ========== VOTING (Permissionless NFT-based) ==========
-// Permissionless - anyone can request voting power NFT
-function grantVotingPowerNFT(address account) external
+// ========== TIERED VOTING (Donation + Interaction Required) ==========
+// Tier 1: Basic Donor (1 vote) - Minimum donation + basic verification
+function earnBasicVotingNFT(address account, uint256 donationProof) external
+
+// Tier 2: Active Participant (2 votes) - Donation + KYC + governance activity
+function earnActiveVotingNFT(address account, uint256 donationProof, uint256 participationScore) external
+
+// Tier 3: Community Leader (3 votes) - Donation + organizer track record
+function earnLeaderVotingNFT(address account, uint256 donationProof, uint256 organizerScore) external
+
+// Upgrade existing vZKT tier based on new qualifications
+function upgradeVotingNFTTier(address account, uint8 newTier, string memory qualificationProof) external
+
+// Note: Sharia Council and Core Contributors are APPOINTED roles, not NFT-earned
+// They get separate permissions through role-based access control
+
+// Donation automatically mints receipt NFT (separate from voting)
+function donate(uint256 poolId, uint256 amount, string memory metadataURI) external
+// Auto-mints ZKT-RECEIPT NFT (proof of donation, no voting power)
 ```
 
 ---
@@ -592,8 +653,8 @@ enum CampaignType {
 |----------|----------|-------|-------------|
 | ProposalManager | `votingPeriod` | 7 days | Standard community voting duration |
 | ProposalManager | `emergencyVotingPeriod` | 24-48 hours | Expedited voting for emergencies |
-| VotingManager | `quorumPercentage` | 10 | Min NFT participation for validity (standard) |
-| VotingManager | `emergencyQuorumPercentage` | 5 | Reduced NFT quorum for emergencies |
+| VotingManager | `quorumPercentage` | 10 | Min weighted NFT participation for validity (standard) |
+| VotingManager | `emergencyQuorumPercentage` | 5 | Reduced weighted NFT quorum for emergencies |
 | VotingManager | `passThreshold` | 51 | Min "for" votes to pass |
 | ShariaReviewManager | `shariaQuorumRequired` | 3 | Min council approvals |
 | ShariaReviewManager | `BUNDLE_THRESHOLD` | 5 | Proposals to auto-bundle |
@@ -615,7 +676,7 @@ enum CampaignType {
 | `finalizeOrganizerGrant(address, uint256)` | Sharia Council | Grant organizer role after approvals |
 | `grantShariaCouncilRole(address)` | Admin only | Grant council permissions |
 | `grantKYCOracleRole(address)` | Admin only | Grant KYC verifier permissions |
-| `grantVotingPowerNFT(address)` | Permissionless | Mint voting power NFT |
+| `requestVotingNFT(address)` | Permissionless | Request voting power NFT |
 | `createProposal(...)` | Organizer | Create new campaign proposal |
 | `updateKYCStatus(uint256, KYCStatus, string)` | KYC Oracle | Update recipient KYC status |
 | `submitForCommunityVote(uint256)` | Organizer | Start standard voting period |
@@ -642,7 +703,7 @@ enum CampaignType {
 
 | Function | Access Control | Purpose |
 |----------|----------------|---------|
-| `castVote(address, uint256, uint8)` | VotingManager | Record vote with weight |
+| `castVote(address, uint256, uint8)` | VotingManager | Record vote with tiered weight (1-3 votes) |
 | `finalizeCommunityVote(uint256)` | Any | Calculate result |
 | `setQuorumPercentage(uint256)` | Admin | Set min participation |
 | `setPassThreshold(uint256)` | Admin | Set pass threshold |
