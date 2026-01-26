@@ -69,10 +69,26 @@ renounceAdminRole()                 // Irreversible, admin role eliminated
 | Aspect | vZKT (Voting NFT) | ZKT-RECEIPT (Donation NFT) |
 |--------|------------------|---------------------------|
 | **Purpose** | Governance participation | Proof of donation |
-| **When Received** | Earned from donation + zkt.app interaction | Auto-minted on donation |
-| **Voting Power** | Yes (tiered: 1-3 votes based on interaction quality) | No voting power |
-| **Requirement** | Must donate + interact with zkt.app | Must donate to campaign |
-| **Metadata** | Voting tier, donation history, interaction score | Donation amount, campaign, timestamp |
+| **When Received** | Earned from donation + platform interaction | Auto-minted on donation |
+| **Voting Power** | Yes (tiered: 1-3 votes based on participation) | No voting power |
+| **Requirement** | Must donate + interact with platform | Must donate to campaign |
+| **Metadata** | Voting tier, donation count, participation score | Donation receipt, campaign, timestamp |
+
+### **vZKT Tier Benefits:**
+
+| Tier | Voting Power | Proposal Rights | Platform Benefits | Requirements |
+|------|--------------|-----------------|-------------------|--------------|
+| **Tier 1: Basic Donor** | 1 vote | Vote on existing proposals | Basic community access | 1+ donation + verification |
+| **Tier 2: Active Participant** | 2 votes | Propose minor improvements | Priority support, early access | 3+ campaigns OR 5+ votes OR 30+ days active |
+| **Tier 3: Community Leader** | 3 votes | Major proposals, organizer nominations | Platform governance, special recognition | 10+ campaigns OR approved proposals OR successful organizer |
+
+### **Privacy-Safe Progression Metrics:**
+- ✅ **Donation count** (number of campaigns supported)
+- ✅ **Governance participation** (voting frequency)
+- ✅ **Platform tenure** (days since first donation)
+- ✅ **Proposal success** (community-approved suggestions)
+- ✅ **Organizer track record** (completed campaigns)
+- ❌ **Donation amounts** (hidden by zero-knowledge proofs)
 
 ---
 
@@ -183,20 +199,22 @@ bytes32 public constant SHARIA_COUNCIL_ROLE = keccak256("SHARIA_COUNCIL_ROLE");
 
 #### **Getting vZKT Voting NFT:**
 ```solidity
-// Tier 1: Basic Donor (1 vote) - Must donate + basic interaction
-function earnBasicVotingNFT(uint256 donationAmount) external
-// Requires: Minimum donation + account verification
+// Tier 1: Basic Donor (1 vote) - First donation + basic verification
+function earnBasicVotingNFT(address account) external
+// Requires: Made at least 1 donation + basic account verification
+// Benefits: Can vote on existing proposals, basic community access
 
-// Tier 2: Active Participant (2 votes) - Donation + KYC + governance participation  
-function earnActiveVotingNFT(uint256 donationAmount) external
-// Requires: Donation + KYC verified + voted on 3+ proposals
+// Tier 2: Active Participant (2 votes) - Regular engagement
+function earnActiveVotingNFT(address account) external  
+// Requires: Donated to 3+ campaigns OR voted on 5+ proposals OR 30+ days active
+// Benefits: 2x voting power, can propose minor improvements, priority support, early access
 
-// Tier 3: Community Leader (3 votes) - Donation + proven track record
-function earnLeaderVotingNFT(uint256 donationAmount) external  
-// Requires: Donation + successful organizer + community endorsements
+// Tier 3: Community Leader (3 votes) - Proven community contribution
+function earnLeaderVotingNFT(address account) external
+// Requires: Donated to 10+ campaigns OR approved proposals OR successful organizer OR 20+ governance votes
+// Benefits: 3x voting power, major proposals, organizer nominations, platform governance, special recognition
 
-// Note: Sharia Council and Core Contributors get separate role-based permissions
-// They are NOT earned through NFTs but appointed by admin/DAO governance
+// Note: Progression based on participation patterns, not donation amounts (privacy-safe)
 ```
 
 #### **Getting ZKT-RECEIPT Donation NFT:**
@@ -210,10 +228,10 @@ zktCore.donate(poolId, amount, "ipfs://QmReceiptMetadata...");
 #### **Example User Journey:**
 ```
 1. User donates to campaign → Gets ZKT-RECEIPT NFT as proof
-2. User completes KYC + interacts with zkt.app → Earns Tier 1 vZKT NFT (1 vote)
-3. User votes on 3+ proposals → Upgrades to Tier 2 vZKT NFT (2 votes)
-4. User becomes successful organizer → Upgrades to Tier 3 vZKT NFT (3 votes)
-5. User accumulates multiple ZKT-RECEIPT NFTs from various donations
+2. User completes basic verification → Earns Tier 1 vZKT NFT (1 vote, can vote on proposals)
+3. User donates to 3+ campaigns + votes regularly → Upgrades to Tier 2 vZKT NFT (2 votes, can propose minor changes)
+4. User donates to 10+ campaigns OR becomes successful organizer → Upgrades to Tier 3 vZKT NFT (3 votes, can propose major changes)
+5. User accumulates multiple ZKT-RECEIPT NFTs from various donations (amounts private)
 ```
 
 ```solidity
@@ -250,21 +268,24 @@ function transferAdminToDAO(address daoGovernance) external onlyRole(DEFAULT_ADM
 // Renounce centralized admin role (final step of decentralization)
 function renounceAdminRole() external onlyRole(DEFAULT_ADMIN_ROLE)
 
-// ========== TIERED VOTING (Donation + Interaction Required) ==========
-// Tier 1: Basic Donor (1 vote) - Minimum donation + basic verification
-function earnBasicVotingNFT(address account, uint256 donationProof) external
+// ========== TIERED VOTING (Privacy-Safe Participation Metrics) ==========
+// Tier 1: Basic Donor (1 vote) - First donation + basic verification
+function earnBasicVotingNFT(address account) external
+// Benefits: Vote on proposals, basic community access
 
-// Tier 2: Active Participant (2 votes) - Donation + KYC + governance activity
-function earnActiveVotingNFT(address account, uint256 donationProof, uint256 participationScore) external
+// Tier 2: Active Participant (2 votes) - Regular platform engagement  
+function earnActiveVotingNFT(address account, uint256 campaignCount, uint256 participationScore) external
+// Benefits: 2x voting power, propose minor improvements, priority support, early access
 
-// Tier 3: Community Leader (3 votes) - Donation + organizer track record
-function earnLeaderVotingNFT(address account, uint256 donationProof, uint256 organizerScore) external
+// Tier 3: Community Leader (3 votes) - Proven community contribution
+function earnLeaderVotingNFT(address account, uint256 campaignCount, uint256 leadershipScore) external
+// Benefits: 3x voting power, major proposals, organizer nominations, platform governance
 
-// Upgrade existing vZKT tier based on new qualifications
-function upgradeVotingNFTTier(address account, uint8 newTier, string memory qualificationProof) external
+// Upgrade existing vZKT tier based on new participation metrics
+function upgradeVotingNFTTier(address account, uint8 newTier, string memory participationProof) external
 
-// Note: Sharia Council and Core Contributors are APPOINTED roles, not NFT-earned
-// They get separate permissions through role-based access control
+// Privacy-safe metrics: donation count, governance participation, platform tenure
+// Does NOT track: donation amounts, individual donation values
 
 // Donation automatically mints receipt NFT (separate from voting)
 function donate(uint256 poolId, uint256 amount, string memory metadataURI) external
