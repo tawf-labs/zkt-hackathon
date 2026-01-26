@@ -103,7 +103,7 @@ contract DeployZKT is Script {
         console.log("- Zakat Period (hard deadline): 30 days");
         console.log("- Grace Period: 7 days");
         console.log("- Extension Duration: 14 days (one-time)");
-        console.log("- Fallback Pool Approval: Propose -> Council Vet -> DAO Ratify");
+        console.log("- Fallback Pool Approval: Propose -> Sharia Council Approves (final)");
 
         vm.stopBroadcast();
         
@@ -132,9 +132,10 @@ contract DeployZKT is Script {
         console.log("3. Grant voting power: dao.grantVotingPower(address, amount)");
         console.log("4. Grant Sharia council roles: dao.grantShariaCouncilRole(address)");
         console.log("5. Test the IDRX faucet: cast send", address(idrxToken), "\"faucet()\" --rpc-url base_sepolia --private-key $PRIVATE_KEY");
-        console.log("6. [ZAKAT] Configure fallback pools: dao.proposeFallbackPool(pool, ipfsCID)");
-        console.log("7. [ZAKAT] Set default fallback pool: dao.setDefaultFallbackPool(pool)");
-        console.log("8. [OPTIONAL] Renounce DEFAULT_ADMIN_ROLE for full decentralization");
+        console.log("6. [ZAKAT] Propose fallback pools: dao.proposeFallbackPool(pool, ipfsCID)");
+        console.log("7. [ZAKAT] Sharia council approves: dao.vetFallbackPool(pool)");
+        console.log("8. [ZAKAT] Set default fallback pool: dao.setDefaultFallbackPool(pool)");
+        console.log("9. [OPTIONAL] Renounce DEFAULT_ADMIN_ROLE for full decentralization");
         console.log("\nArchitecture Notes:");
         console.log("- Fully decentralized: No ADMIN_ROLE, only DEFAULT_ADMIN_ROLE for initial setup");
         console.log("- Pool creation: Organizer-only (no admin needed after Sharia approval)");
@@ -148,7 +149,7 @@ contract DeployZKT is Script {
         console.log("- One-time extension: +14 days (council granted, documented on IPFS)");
         console.log("- Auto-redistribution: Funds redirected to approved fallback pool if timeout");
         console.log("- Normal campaigns: No timeout restrictions (Sadaqah/voluntary)");
-        console.log("- Fallback pool approval: Propose -> Council Vet -> DAO Ratify");
+        console.log("- Fallback pool approval: Community proposes → Sharia council approves (final)");
         console.log("================================\n");
     }
 }

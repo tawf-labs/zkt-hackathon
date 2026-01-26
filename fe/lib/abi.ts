@@ -422,13 +422,6 @@ export const ZakatEscrowManagerABI = [
     outputs: [],
     stateMutability: 'nonpayable',
   },
-  {
-    type: 'function',
-    name: 'ratifyFallbackPool',
-    inputs: [{ name: 'pool', type: 'address', internalType: 'address' }],
-    outputs: [],
-    stateMutability: 'nonpayable',
-  },
   // Events
   {
     type: 'event',

@@ -39,12 +39,11 @@ contract ZakatEscrowManager is AccessControl, ReentrancyGuard {
         Completed         // Organizer successfully distributed funds
     }
 
-    /// @notice Fallback pool approval states (hybrid approval: propose -> council vet -> DAO ratify)
+    /// @notice Fallback pool approval states (simplified: propose -> council approves)
     enum FallbackStatus {
         None,             // Not proposed
         Proposed,         // Community proposed
-        CouncilVetted,    // Sharia council approved
-        Approved          // DAO community approved
+        Approved          // Sharia council approved (final)
     }
 
     // ============ Structs ============
@@ -552,35 +551,18 @@ contract ZakatEscrowManager is AccessControl, ReentrancyGuard {
     }
 
     /**
-     * @notice Sharia council vets a proposed fallback pool
-     * @param pool Address of the fallback pool to vet
+     * @notice Sharia council approves a proposed fallback pool
+     * @param pool Address of the fallback pool to approve
      */
     function vetFallbackPool(address pool) external onlyRole(SHARIA_COUNCIL_ROLE) {
         FallbackPoolData storage fallbackData = fallbackPools[pool];
 
         require(fallbackData.status == FallbackStatus.Proposed, "Pool not proposed");
 
-        fallbackData.status = FallbackStatus.CouncilVetted;
-
-        emit FallbackPoolVetted(pool, msg.sender);
-    }
-
-    /**
-     * @notice DAO ratifies a vetted fallback pool (final approval)
-     * @dev In production, this would be called through DAO governance
-     * @param pool Address of the fallback pool to approve
-     */
-    function ratifyFallbackPool(address pool) external onlyRole(ADMIN_ROLE) {
-        FallbackPoolData storage fallbackData = fallbackPools[pool];
-
-        require(
-            fallbackData.status == FallbackStatus.CouncilVetted ||
-            fallbackData.status == FallbackStatus.Proposed,
-            "Pool not ready for ratification"
-        );
-
+        // Sharia council approval is final - no need for additional ratification
         fallbackData.status = FallbackStatus.Approved;
 
+        emit FallbackPoolVetted(pool, msg.sender);
         emit FallbackPoolApproved(pool);
     }
 
@@ -588,7 +570,7 @@ contract ZakatEscrowManager is AccessControl, ReentrancyGuard {
      * @notice Revoke approval of a fallback pool
      * @param pool Address of the fallback pool to revoke
      */
-    function revokeFallbackPool(address pool) external onlyRole(ADMIN_ROLE) {
+    function revokeFallbackPool(address pool) external onlyRole(SHARIA_COUNCIL_ROLE) {
         FallbackPoolData storage fallbackData = fallbackPools[pool];
 
         require(fallbackData.status != FallbackStatus.None, "Pool not proposed");

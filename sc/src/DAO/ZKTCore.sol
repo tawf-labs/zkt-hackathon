@@ -282,17 +282,10 @@ contract ZKTCore is AccessControl {
     }
 
     /**
-     * @notice Sharia council vets a proposed fallback pool
+     * @notice Sharia council approves a proposed fallback pool
      */
     function vetFallbackPool(address pool) external onlyRole(SHARIA_COUNCIL_ROLE) {
         zakatEscrowManager.vetFallbackPool(pool);
-    }
-
-    /**
-     * @notice DAO ratifies a vetted fallback pool
-     */
-    function ratifyFallbackPool(address pool) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        zakatEscrowManager.ratifyFallbackPool(pool);
     }
 
     /**
