@@ -1,69 +1,3 @@
-## Foundry
-
-**Foundry is a blazing fast, portable and modular toolkit for Ethereum application development written in Rust.**
-
-Foundry consists of:
-
--   **Forge**: Ethereum testing framework (like Truffle, Hardhat and DappTools).
--   **Cast**: Swiss army knife for interacting with EVM smart contracts, sending transactions and getting chain data.
--   **Anvil**: Local Ethereum node, akin to Ganache, Hardhat Network.
--   **Chisel**: Fast, utilitarian, and verbose solidity REPL.
-
-## Documentation
-
-https://book.getfoundry.sh/
-
-## Usage
-
-### Build
-
-```shell
-$ forge build
-```
-
-### Test
-
-```shell
-$ forge test
-```
-
-### Format
-
-```shell
-$ forge fmt
-```
-
-### Gas Snapshots
-
-```shell
-$ forge snapshot
-```
-
-### Anvil
-
-```shell
-$ anvil
-```
-
-### Deploy
-
-```shell
-$ forge script script/Counter.s.sol:CounterScript --rpc-url <your_rpc_url> --private-key <your_private_key>
-```
-
-### Cast
-
-```shell
-$ cast <subcommand>
-```
-
-### Help
-
-```shell
-$ forge --help
-$ anvil --help
-$ cast --help
-```
 # ZKT Zakat DAO - Smart Contract Documentation
 
 ## Table of Contents
@@ -329,7 +263,13 @@ flowchart TD
     U -->|No| X
 
     K --> W[Recipient KYC Required]
-    W --> R
+    W --> R2[Community Vote: 7 days]
+    R2 --> S2{Vote Passes?}
+    S2 -->|Yes| T2[Auto-Bundle Sharia Review]
+    S2 -->|No| X
+    T2 --> U2{Sharia Approves?}
+    U2 -->|Yes| V2[Normal Pool Created]
+    U2 -->|No| X
 
     P --> Y[Emergency Pool Rules]
     Y --> Z[Parametric Distribution]
@@ -343,6 +283,17 @@ flowchart TD
     AF --> AG{Council Extends?}
     AG -->|Yes| AH[+14 Days]
     AG -->|No| AI[Redistribute to Fallback]
+
+    V2 --> AB2[Normal Pool Rules]
+    AB2 --> AC2[Unlimited Fundraising]
+    AC2 --> AD2[Tranche-based Distribution]
+    AD2 --> AE2[Organizer Withdraws by Milestones]
+    AE2 --> AF2[Community Reviews Progress]
+    AF2 --> AG2{Release Next Tranche?}
+    AG2 -->|Yes| AH2[Next Milestone Funded]
+    AG2 -->|No| AI2[Hold Remaining Funds]
+    AH2 --> AF2
+    AI2 --> AJ2[Dispute Resolution]
 ```
 
 ### Step-by-Step Breakdown
