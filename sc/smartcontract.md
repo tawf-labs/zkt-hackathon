@@ -68,9 +68,9 @@ renounceAdminRole()                 // Irreversible, admin role eliminated
 
 | Aspect | vZKT (Voting NFT) | ZKT-RECEIPT (Donation NFT) |
 |--------|------------------|---------------------------|
-| **Purpose** | Governance participation | Proof of donation |
+| **Purpose** | Platform-wide governance participation | Campaign-specific governance + donation proof |
 | **When Received** | Earned from donation + platform interaction | Auto-minted on donation |
-| **Voting Power** | Yes (tiered: 1-3 votes based on participation) | No voting power |
+| **Voting Power** | Yes (tiered: 1-3 votes on platform proposals) | Yes (1 vote per campaign donated to) |
 | **Requirement** | Must donate + interact with platform | Must donate to campaign |
 | **Metadata** | Voting tier, donation count, participation score | Donation receipt, campaign, timestamp |
 
@@ -81,6 +81,27 @@ renounceAdminRole()                 // Irreversible, admin role eliminated
 | **Tier 1: Basic Donor** | 1 vote | Vote on existing proposals | Basic community access | 1+ donation + verification |
 | **Tier 2: Active Participant** | 2 votes | Propose minor improvements | Priority support, early access | 3+ campaigns OR 5+ votes OR 30+ days active |
 | **Tier 3: Community Leader** | 3 votes | Major proposals, organizer nominations | Platform governance, special recognition | 10+ campaigns OR approved proposals OR successful organizer |
+
+### **Dual Governance System:**
+
+| Governance Type | Token Used | Scope | Voting Rights |
+|-----------------|------------|-------|---------------|
+| **Platform Governance** | vZKT NFT | Platform-wide decisions | Tiered voting power (1-3 votes) |
+| **Campaign Governance** | ZKT-RECEIPT NFT | Campaign-specific decisions | 1 vote per campaign donated to |
+
+### **Platform Governance (vZKT):**
+- New organizer approvals
+- Platform fee changes
+- New campaign types
+- System parameter updates
+- Sharia Council appointments
+
+### **Campaign Governance (ZKT-RECEIPT):**
+- Organizer performance reviews
+- Tranche release approvals (Normal campaigns)
+- Milestone completion disputes
+- Fund reallocation decisions
+- Campaign extensions/modifications
 
 ### **Privacy-Safe Progression Metrics:**
 - ✅ **Donation count** (number of campaigns supported)
@@ -223,15 +244,22 @@ function earnLeaderVotingNFT(address account) external
 idrxToken.approve(address(zktCore), amount);
 zktCore.donate(poolId, amount, "ipfs://QmReceiptMetadata...");
 // Auto-mints ZKT-RECEIPT NFT as proof of donation
+
+// Campaign-specific governance rights for ZKT-RECEIPT holders:
+// - Vote on organizer performance reviews
+// - Vote on tranche releases for Normal campaigns  
+// - Vote on milestone completion disputes
+// - Vote on fund reallocation if organizer fails to deliver
+// - Vote on campaign extensions or modifications
 ```
 
 #### **Example User Journey:**
 ```
-1. User donates to campaign → Gets ZKT-RECEIPT NFT as proof
-2. User completes basic verification → Earns Tier 1 vZKT NFT (1 vote, can vote on proposals)
-3. User donates to 3+ campaigns + votes regularly → Upgrades to Tier 2 vZKT NFT (2 votes, can propose minor changes)
-4. User donates to 10+ campaigns OR becomes successful organizer → Upgrades to Tier 3 vZKT NFT (3 votes, can propose major changes)
-5. User accumulates multiple ZKT-RECEIPT NFTs from various donations (amounts private)
+1. User donates to campaign → Gets ZKT-RECEIPT NFT as proof + campaign governance rights
+2. User completes basic verification → Earns Tier 1 vZKT NFT (1 vote on platform proposals)
+3. User donates to 3+ campaigns + votes regularly → Upgrades to Tier 2 vZKT NFT (2 votes on platform)
+4. User donates to 10+ campaigns OR becomes successful organizer → Upgrades to Tier 3 vZKT NFT (3 votes on platform)
+5. User can vote on specific campaign issues using their ZKT-RECEIPT NFTs (organizer performance, tranche releases, etc.)
 ```
 
 ```solidity
@@ -287,9 +315,15 @@ function upgradeVotingNFTTier(address account, uint8 newTier, string memory part
 // Privacy-safe metrics: donation count, governance participation, platform tenure
 // Does NOT track: donation amounts, individual donation values
 
-// Donation automatically mints receipt NFT (separate from voting)
+// Donation automatically mints receipt NFT with campaign governance rights
 function donate(uint256 poolId, uint256 amount, string memory metadataURI) external
-// Auto-mints ZKT-RECEIPT NFT (proof of donation, no voting power)
+// Auto-mints ZKT-RECEIPT NFT (campaign governance + donation proof)
+
+// Campaign-specific governance functions for ZKT-RECEIPT holders:
+function voteOnOrganizerPerformance(uint256 poolId, uint8 rating) external // Only ZKT-RECEIPT holders of that campaign
+function voteOnTrancheRelease(uint256 poolId, uint256 trancheId, bool approve) external // Normal campaigns only
+function voteOnMilestoneDispute(uint256 poolId, uint256 milestoneId, bool completed) external // Dispute resolution
+function voteOnCampaignExtension(uint256 poolId, uint256 newDeadline, bool approve) external // Campaign modifications
 ```
 
 ---
