@@ -16,11 +16,42 @@
 
 The ZKT Zakat DAO is a decentralized platform for Sharia-compliant charitable crowdfunding. The system uses a modular architecture where different managers handle specific aspects of the campaign lifecycle.
 
+### Progressive Decentralization Roadmap
+
+The system follows a **progressive decentralization** approach to ensure security and stability:
+
+| Phase | Admin Control | Duration | Purpose |
+|-------|---------------|----------|---------|
+| **Phase 1: Launch** | Core team multisig | 6-12 months | Bootstrap ecosystem, establish trust, debug issues |
+| **Phase 2: Transition** | DAO governance contract | 12-24 months | Community takes control, admin as emergency backup |
+| **Phase 3: Full DAO** | Admin role renounced | Permanent | Complete decentralization, community-only governance |
+
+**Why this approach?**
+- **Security**: Allows fixing critical bugs during early adoption
+- **Trust Building**: Community sees transparent governance before taking control  
+- **Gradual Learning**: DAO participants gain experience with governance decisions
+- **Emergency Response**: Core team can respond to exploits/attacks initially
+
+**Admin Role Functions (Temporary):**
+```solidity
+// Phase 1: Core team multisig controls these
+grantShariaCouncilRole(address)     // Add trusted Sharia scholars
+grantKYCOracleRole(address)         // Add identity verification providers
+setSystemParameters(...)           // Adjust voting periods, quorums, etc.
+
+// Phase 2: Transfer to DAO governance
+transferAdminToDAO(daoGovernance)   // DAO takes control
+
+// Phase 3: Complete decentralization  
+renounceAdminRole()                 // Irreversible, admin role eliminated
+```
+
 ### Key Design Principles
 
 - **Sharia Compliance**: Zakat campaigns follow Shafi'i madhhab rulings with mandatory 30-day distribution limits
 - **Community Governance**: Token holders vote on proposals before Sharia council review
 - **Hybrid Organizer Approval**: Community proposes + Sharia council approves new organizers (decentralized)
+- **Progressive Decentralization**: Admin role starts as core team multisig, transitions to DAO governance, eventually renounced
 - **Triple Campaign Types**: Zakat-compliant, Normal, and Emergency (DRCP-style)
 - **Soulbound Tokens**: Voting power (vZKT) and donation receipts are non-transferable
 - **Privacy Support**: Private donations using Pedersen commitments
@@ -94,7 +125,7 @@ The ZKT Zakat DAO is a decentralized platform for Sharia-compliant charitable cr
 | **KYC Oracle** | Granted by DEFAULT_ADMIN_ROLE via `grantKYCOracleRole()` | Verify organizer identity (required BEFORE organizer can submit proposals) |
 | **Voter** | Receive vZKT NFT (permissionless) | Cast votes on community proposals AND organizer applications (voting power from NFT) |
 | **Donor** | Hold IDRX tokens | Donate to campaigns (public or private) |
-| **Admin** | DEFAULT_ADMIN_ROLE (deployer) | Configure parameters, grant Sharia Council/KYC Oracle roles |
+| **Admin** | DEFAULT_ADMIN_ROLE (multisig → DAO transition) | Configure parameters, grant Sharia Council/KYC Oracle roles (temporary, will be transferred to DAO governance) |
 
 ### Important: KYC Registry vs Recipient KYC
 
@@ -160,12 +191,19 @@ function finalizeOrganizerGrant(address applicant, uint256 applicationId)
     external
     onlyRole(SHARIA_COUNCIL_ROLE)
 
-// ========== COUNCIL ROLES (Admin-granted) ==========
-// Admin grants Sharia Council role
+// ========== COUNCIL ROLES (Initially Multisig, Later DAO-governed) ==========
+// Core team multisig grants Sharia Council role (will transition to DAO governance)
 function grantShariaCouncilRole(address account) external onlyRole(DEFAULT_ADMIN_ROLE)
 
-// Admin grants KYC Oracle role
+// Core team multisig grants KYC Oracle role (will transition to DAO governance)
 function grantKYCOracleRole(address account) external onlyRole(DEFAULT_ADMIN_ROLE)
+
+// ========== DAO TRANSITION FUNCTIONS ==========
+// Transfer admin control to DAO governance contract
+function transferAdminToDAO(address daoGovernance) external onlyRole(DEFAULT_ADMIN_ROLE)
+
+// Renounce centralized admin role (final step of decentralization)
+function renounceAdminRole() external onlyRole(DEFAULT_ADMIN_ROLE)
 
 // ========== VOTING (Permissionless NFT-based) ==========
 // Permissionless - anyone can request voting power NFT
