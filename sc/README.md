@@ -437,9 +437,16 @@ zktCore.donatePrivate(poolId, amount, commitment, "ipfs://Qm...");
 
 **Emergency Pool (DRCP Rules):**
 ```solidity
-// Parametric triggers or council approval for instant release
-zktCore.executeEmergencyRelease(poolId, amount, "ipfs://QmProof...");
-// Funds released immediately to verified recipients
+// Organizer requests fund release for specific victims/purposes
+zktCore.requestEmergencyRelease(poolId, amount, recipientList, "ipfs://QmProof...");
+
+// Council approves and executes release
+zktCore.executeCouncilRelease(poolId, recipientAddresses[], "ipfs://QmApproval...");
+
+// OR parametric triggers execute automatically
+zktCore.executeParametricRelease(poolId, amount, "GPS coordinates verified");
+
+// Organizer cannot withdraw entire pool - only approved portions
 ```
 
 **Normal Pool:**
@@ -619,7 +626,7 @@ enum CampaignType {
 | `createCampaignPool(uint256, address)` | Organizer | Create fundraising pool (address only for Zakat fallback) |
 | `donate(uint256, uint256, string)` | Any | Donate to pool |
 | `withdrawFunds(uint256)` | Organizer | Withdraw raised funds |
-| `executeEmergencyRelease(uint256, uint256, string)` | Emergency pool | Parametric fund release |
+| `requestEmergencyRelease(uint256, uint256, address[], string)` | Organizer | Request fund release for specific victims |
 
 #### ProposalManager.sol
 
@@ -679,6 +686,7 @@ enum CampaignType {
 |----------|----------------|---------|
 | `createEmergencyPool(uint256)` | Admin | Create disaster response pool |
 | `donate(address, uint256, uint256, string)` | EmergencyEscrow | Accept donations |
+| `requestEmergencyRelease(uint256, uint256, address[], string)` | Organizer | Request fund release for specific victims |
 | `executeParametricRelease(uint256, uint256, string)` | Oracle/Trigger | Auto-release on parametric trigger |
 | `executeCouncilRelease(uint256, uint256[], string)` | Sharia Council | Council-approved multi-recipient release |
 | `verifyImpact(uint256, address, string)` | Verified volunteer | Confirm aid delivery |
