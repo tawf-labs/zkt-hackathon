@@ -249,9 +249,9 @@ flowchart TD
     H -->|Normal| K[PoolManager]
 
     I --> L[No Recipient KYC Needed]
-    L --> M[Expedited Voting: 24-48h (Prioritized)]
-    M --> O[SKIP Sharia Review]
-    O --> P[Emergency Pool Created]
+    L --> M[Expedited Voting: 24-48h Prioritized]
+    M --> N[SKIP Sharia Review]
+    N --> P[Emergency Pool Created]
 
     J --> Q[Recipient KYC Required]
     Q --> R[Community Vote: 7 days]
