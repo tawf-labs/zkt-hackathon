@@ -17,6 +17,12 @@ contract DeployZKT is Script {
     DonationReceiptNFT public receiptNFT;
     VotingToken public votingToken;
     ZKTCore public dao;
+
+    // ZakatEscrowManager is deployed within ZKTCore
+    address public zakatEscrowManager;
+
+    // Example fallback pool address (would be replaced with actual charitable organization)
+    address public exampleFallbackPool;
     
     function run() external {
         // Get deployer private key from environment
@@ -51,12 +57,19 @@ contract DeployZKT is Script {
         console.log("VotingManager deployed at:", dao.getVotingManagerAddress());
         console.log("ShariaReviewManager deployed at:", dao.getShariaReviewManagerAddress());
         console.log("PoolManager deployed at:", dao.getPoolManagerAddress());
-        
+        zakatEscrowManager = dao.getZakatEscrowManagerAddress();
+        console.log("ZakatEscrowManager deployed at:", zakatEscrowManager);
+
         // 5. Grant MINTER_ROLE to PoolManager for DonationReceiptNFT
         console.log("\n5. Granting MINTER_ROLE to PoolManager...");
         receiptNFT.grantRole(receiptNFT.MINTER_ROLE(), dao.getPoolManagerAddress());
         console.log("MINTER_ROLE granted to PoolManager");
-        
+
+        // 5.1. Grant MINTER_ROLE to ZakatEscrowManager for DonationReceiptNFT
+        console.log("\n5.1. Granting MINTER_ROLE to ZakatEscrowManager...");
+        receiptNFT.grantRole(receiptNFT.MINTER_ROLE(), zakatEscrowManager);
+        console.log("MINTER_ROLE granted to ZakatEscrowManager");
+
         // 6. Grant MINTER_ROLE to DAO in VotingToken
         console.log("\n6. Granting MINTER_ROLE to DAO for VotingToken...");
         votingToken.grantRole(votingToken.MINTER_ROLE(), address(dao));
@@ -75,7 +88,23 @@ contract DeployZKT is Script {
         console.log("\n8. Granting initial voting power...");
         dao.grantVotingPower(deployer, 1000 * 10**18); // 1000 voting tokens
         console.log("Granted 1000 voting tokens to deployer");
-        
+
+        // 9. Setup ZakatEscrowManager default fallback pool
+        console.log("\n9. Setting up ZakatEscrowManager...");
+        // For now, use deployer address as example fallback pool
+        // In production, this would be a verified charitable organization
+        exampleFallbackPool = deployer;
+        dao.setDefaultFallbackPool(exampleFallbackPool);
+        console.log("Default fallback pool set to:", exampleFallbackPool);
+        console.log("Note: In production, set default fallback pool to a verified Zakat distributor");
+
+        // 10. ZakatEscrowManager configuration summary
+        console.log("\n10. ZakatEscrowManager Configuration:");
+        console.log("- Zakat Period (hard deadline): 30 days");
+        console.log("- Grace Period: 7 days");
+        console.log("- Extension Duration: 14 days (one-time)");
+        console.log("- Fallback Pool Approval: Propose -> Council Vet -> DAO Ratify");
+
         vm.stopBroadcast();
         
         // Print deployment summary
@@ -91,7 +120,8 @@ contract DeployZKT is Script {
         console.log("ProposalManager:", dao.getProposalManagerAddress());
         console.log("VotingManager:", dao.getVotingManagerAddress());
         console.log("ShariaReviewManager:", dao.getShariaReviewManagerAddress());
-        console.log("PoolManager:", dao.getPoolManagerAddress());
+        console.log("PoolManager (Normal campaigns):", dao.getPoolManagerAddress());
+        console.log("ZakatEscrowManager (Zakat campaigns):", zakatEscrowManager);
         console.log("\nConfiguration:");
         console.log("Deployer has ORGANIZER, SHARIA_COUNCIL, and KYC_ORACLE roles");
         console.log("Deployer has 1000 voting tokens");
@@ -102,13 +132,23 @@ contract DeployZKT is Script {
         console.log("3. Grant voting power: dao.grantVotingPower(address, amount)");
         console.log("4. Grant Sharia council roles: dao.grantShariaCouncilRole(address)");
         console.log("5. Test the IDRX faucet: cast send", address(idrxToken), "\"faucet()\" --rpc-url base_sepolia --private-key $PRIVATE_KEY");
-        console.log("6. [OPTIONAL] Renounce DEFAULT_ADMIN_ROLE for full decentralization");
+        console.log("6. [ZAKAT] Configure fallback pools: dao.proposeFallbackPool(pool, ipfsCID)");
+        console.log("7. [ZAKAT] Set default fallback pool: dao.setDefaultFallbackPool(pool)");
+        console.log("8. [OPTIONAL] Renounce DEFAULT_ADMIN_ROLE for full decentralization");
         console.log("\nArchitecture Notes:");
         console.log("- Fully decentralized: No ADMIN_ROLE, only DEFAULT_ADMIN_ROLE for initial setup");
         console.log("- Pool creation: Organizer-only (no admin needed after Sharia approval)");
         console.log("- One non-transferable receipt NFT minted per donation (not per pool)");
         console.log("- VotingToken (non-transferable ERC20) used for community voting");
-        console.log("- Modular design: ProposalManager, VotingManager, ShariaReviewManager, PoolManager");
+        console.log("- Modular design: ProposalManager, VotingManager, ShariaReviewManager, PoolManager, ZakatEscrowManager");
+        console.log("");
+        console.log("ZakatEscrowManager Features:");
+        console.log("- ZakatCompliant campaigns: 30-day hard limit for distribution (Shafi'i compliance)");
+        console.log("- Grace period: 7 days for Sharia council intervention");
+        console.log("- One-time extension: +14 days (council granted, documented on IPFS)");
+        console.log("- Auto-redistribution: Funds redirected to approved fallback pool if timeout");
+        console.log("- Normal campaigns: No timeout restrictions (Sadaqah/voluntary)");
+        console.log("- Fallback pool approval: Propose -> Council Vet -> DAO Ratify");
         console.log("================================\n");
     }
 }

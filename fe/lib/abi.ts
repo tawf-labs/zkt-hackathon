@@ -3,6 +3,7 @@
 
 export const CONTRACT_ADDRESSES = {
   ZKTCore: '0xacc7d3d90ba0e06dfa3ddd702214ed521726efdd' as const,
+  ZakatEscrowManager: '0xacc7d3d90ba0e06dfa3ddd702214ed521726efdd' as const, // Accessed via ZKTCore
   MockIDRX: '0xb3970735048e6db24028eb383d458e16637cbc7a' as const,
   DonationReceiptNFT: '0x3d40bad0a1ac627d59bc142ded202e08e002b6a7' as const,
   VotingToken: '0x4461b304f0ce2a879c375ea9e5124be8bc73522d' as const,
@@ -290,6 +291,188 @@ export const ZKTCoreABI = [
   },
 ] as const;
 
+// ZakatEscrowManager ABI - For Zakat-compliant campaign timeout management
+export const ZakatEscrowManagerABI = [
+  // View Functions
+  {
+    type: 'function',
+    name: 'getPool',
+    inputs: [{ name: 'poolId', type: 'uint256', internalType: 'uint256' }],
+    outputs: [
+      {
+        name: '',
+        type: 'tuple',
+        internalType: 'struct ZakatEscrowManager.ZakatPool',
+        components: [
+          { name: 'poolId', type: 'uint256', internalType: 'uint256' },
+          { name: 'proposalId', type: 'uint256', internalType: 'uint256' },
+          { name: 'organizer', type: 'address', internalType: 'address' },
+          { name: 'fundingGoal', type: 'uint256', internalType: 'uint256' },
+          { name: 'raisedAmount', type: 'uint256', internalType: 'uint256' },
+          { name: 'campaignTitle', type: 'string', internalType: 'string' },
+          { name: 'createdAt', type: 'uint256', internalType: 'uint256' },
+          { name: 'deadline', type: 'uint256', internalType: 'uint256' },
+          { name: 'gracePeriodEnd', type: 'uint256', internalType: 'uint256' },
+          { name: 'fallbackPool', type: 'address', internalType: 'address' },
+          { name: 'fallbackStatus', type: 'uint8', internalType: 'enum ZakatEscrowManager.FallbackStatus' },
+          { name: 'status', type: 'uint8', internalType: 'enum ZakatEscrowManager.PoolStatus' },
+          { name: 'redistributed', type: 'bool', internalType: 'bool' },
+          { name: 'extensionUsed', type: 'bool', internalType: 'bool' },
+          { name: 'extensionGranted', type: 'bool', internalType: 'bool' },
+          { name: 'extensionGrantedAt', type: 'uint256', internalType: 'uint256' },
+          { name: 'donors', type: 'address[]', internalType: 'address[]' },
+          { name: 'fundsWithdrawn', type: 'bool', internalType: 'bool' },
+        ],
+      },
+    ],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    name: 'getTimeRemaining',
+    inputs: [{ name: 'poolId', type: 'uint256', internalType: 'uint256' }],
+    outputs: [
+      { name: 'remaining', type: 'uint256', internalType: 'uint256' },
+      { name: 'inGracePeriod', type: 'bool', internalType: 'bool' },
+      { name: 'canRedistribute', type: 'bool', internalType: 'bool' },
+    ],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    name: 'getPoolStatusString',
+    inputs: [{ name: 'poolId', type: 'uint256', internalType: 'uint256' }],
+    outputs: [{ name: '', type: 'string', internalType: 'string' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    name: 'isReadyForRedistribution',
+    inputs: [{ name: 'poolId', type: 'uint256', internalType: 'uint256' }],
+    outputs: [{ name: 'ready', type: 'bool', internalType: 'bool' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    name: 'getFallbackPool',
+    inputs: [{ name: 'pool', type: 'address', internalType: 'address' }],
+    outputs: [
+      {
+        name: '',
+        type: 'tuple',
+        internalType: 'struct ZakatEscrowManager.FallbackPoolData',
+        components: [
+          { name: 'pool', type: 'address', internalType: 'address' },
+          { name: 'status', type: 'uint8', internalType: 'enum ZakatEscrowManager.FallbackStatus' },
+          { name: 'proposedAt', type: 'uint256', internalType: 'uint256' },
+          { name: 'proposer', type: 'address', internalType: 'address' },
+          { name: 'reasoning', type: 'string', internalType: 'string' },
+        ],
+      },
+    ],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    name: 'getAllFallbackPools',
+    inputs: [],
+    outputs: [{ name: '', type: 'address[]', internalType: 'address[]' }],
+    stateMutability: 'view',
+  },
+  // Write Functions - Pool Management
+  {
+    type: 'function',
+    name: 'checkTimeout',
+    inputs: [{ name: 'poolId', type: 'uint256', internalType: 'uint256' }],
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    name: 'councilExtendDeadline',
+    inputs: [
+      { name: 'poolId', type: 'uint256', internalType: 'uint256' },
+      { name: 'reasoning', type: 'string', internalType: 'string' },
+    ],
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    name: 'executeRedistribution',
+    inputs: [{ name: 'poolId', type: 'uint256', internalType: 'uint256' }],
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  // Fallback Pool Management
+  {
+    type: 'function',
+    name: 'proposeFallbackPool',
+    inputs: [
+      { name: 'pool', type: 'address', internalType: 'address' },
+      { name: 'reasoning', type: 'string', internalType: 'string' },
+    ],
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    name: 'vetFallbackPool',
+    inputs: [{ name: 'pool', type: 'address', internalType: 'address' }],
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    name: 'ratifyFallbackPool',
+    inputs: [{ name: 'pool', type: 'address', internalType: 'address' }],
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  // Events
+  {
+    type: 'event',
+    name: 'ZakatPoolCreated',
+    inputs: [
+      { name: 'poolId', type: 'uint256', indexed: true, internalType: 'uint256' },
+      { name: 'proposalId', type: 'uint256', indexed: true, internalType: 'uint256' },
+      { name: 'organizer', type: 'address', indexed: true, internalType: 'address' },
+      { name: 'deadline', type: 'uint256', indexed: false, internalType: 'uint256' },
+      { name: 'fallbackPool', type: 'address', indexed: false, internalType: 'address' },
+    ],
+    anonymous: false,
+  },
+  {
+    type: 'event',
+    name: 'PoolEnteredGracePeriod',
+    inputs: [
+      { name: 'poolId', type: 'uint256', indexed: true, internalType: 'uint256' },
+      { name: 'gracePeriodEnd', type: 'uint256', indexed: false, internalType: 'uint256' },
+    ],
+    anonymous: false,
+  },
+  {
+    type: 'event',
+    name: 'DeadlineExtended',
+    inputs: [
+      { name: 'poolId', type: 'uint256', indexed: true, internalType: 'uint256' },
+      { name: 'newDeadline', type: 'uint256', indexed: false, internalType: 'uint256' },
+      { name: 'reasoning', type: 'string', indexed: false, internalType: 'string' },
+    ],
+    anonymous: false,
+  },
+  {
+    type: 'event',
+    name: 'FundsRedistributed',
+    inputs: [
+      { name: 'poolId', type: 'uint256', indexed: true, internalType: 'uint256' },
+      { name: 'fallbackPool', type: 'address', indexed: true, internalType: 'address' },
+      { name: 'amount', type: 'uint256', indexed: false, internalType: 'uint256' },
+    ],
+    anonymous: false,
+  },
+] as const;
+
 // MockIDRX ABI - ERC20 token with faucet
 export const MockIDRXABI = [
   {
@@ -566,4 +749,123 @@ export function formatAmount(amount: bigint, decimals: number = 18): string {
 export function parseAmount(amount: string | number, decimals: number = 18): bigint {
   const num = typeof amount === 'string' ? parseFloat(amount) : amount;
   return BigInt(Math.floor(num * Math.pow(10, decimals)));
+}
+
+// Zakat-specific helper functions
+
+/**
+ * Format time remaining for Zakat pool withdrawal
+ * @param remainingSeconds Remaining time in seconds
+ * @returns Formatted string like "25 days remaining" or "2 hours remaining"
+ */
+export function formatTimeRemaining(remainingSeconds: number | bigint): string {
+  const seconds = Number(remainingSeconds);
+  if (seconds <= 0) return 'Expired';
+
+  const days = Math.floor(seconds / (24 * 60 * 60));
+  const hours = Math.floor((seconds % (24 * 60 * 60)) / (60 * 60));
+  const minutes = Math.floor((seconds % (60 * 60)) / 60);
+
+  if (days > 0) {
+    return `${days} day${days !== 1 ? 's' : ''} remaining`;
+  } else if (hours > 0) {
+    return `${hours} hour${hours !== 1 ? 's' : ''} remaining`;
+  } else if (minutes > 0) {
+    return `${minutes} minute${minutes !== 1 ? 's' : ''} remaining`;
+  }
+  return 'Less than a minute remaining';
+}
+
+/**
+ * Get Zakat pool status display information
+ * @param status Pool status from contract
+ * @param inGracePeriod Whether pool is in grace period
+ * @param canRedistribute Whether pool can be redistributed
+ * @returns Status display info
+ */
+export function getZakatPoolStatusInfo(
+  status: number,
+  inGracePeriod: boolean,
+  canRedistribute: boolean
+): {
+  label: string;
+  variant: 'default' | 'warning' | 'danger' | 'success';
+  description: string;
+} {
+  // PoolStatus enum: Active=0, GracePeriod=1, Redistributed=2, Completed=3
+  if (status === 3) {
+    return {
+      label: 'Completed',
+      variant: 'success',
+      description: 'Funds have been successfully distributed by the organizer.',
+    };
+  }
+
+  if (status === 2) {
+    return {
+      label: 'Redistributed',
+      variant: 'danger',
+      description: 'Funds were redistributed to an approved fallback pool.',
+    };
+  }
+
+  if (inGracePeriod || status === 1) {
+    return {
+      label: 'Grace Period',
+      variant: 'warning',
+      description: 'Withdrawal period has ended. Sharia council may grant extension or funds will be redistributed.',
+    };
+  }
+
+  if (canRedistribute) {
+    return {
+      label: 'Ready for Redistribution',
+      variant: 'danger',
+      description: 'Grace period has ended. Anyone can trigger redistribution to fallback pool.',
+    };
+  }
+
+  return {
+    label: 'Active',
+    variant: 'default',
+    description: 'Organizer can withdraw funds within the 30-day Zakat distribution period.',
+  };
+}
+
+/**
+ * Calculate deadline from creation timestamp for Zakat pools
+ * @param createdAt Pool creation timestamp
+ * @param extensionUsed Whether extension was granted
+ * @returns Deadline timestamp
+ */
+export function calculateZakatDeadline(createdAt: number, extensionUsed: boolean): number {
+  const ZAKAT_PERIOD = 30 * 24 * 60 * 60; // 30 days in seconds
+  const EXTENSION_DURATION = 14 * 24 * 60 * 60; // 14 days in seconds
+
+  let deadline = createdAt + ZAKAT_PERIOD;
+  if (extensionUsed) {
+    deadline += EXTENSION_DURATION;
+  }
+  return deadline;
+}
+
+/**
+ * Calculate grace period end timestamp
+ * @param deadline Deadline timestamp
+ * @returns Grace period end timestamp
+ */
+export function calculateGracePeriodEnd(deadline: number): number {
+  const GRACE_PERIOD = 7 * 24 * 60 * 60; // 7 days in seconds
+  return deadline + GRACE_PERIOD;
+}
+
+/**
+ * Check if timestamp is within warning period (5 days before deadline)
+ * @param remainingSeconds Remaining time in seconds
+ * @returns True if in warning period
+ */
+export function isInWarningPeriod(remainingSeconds: number | bigint): boolean {
+  const WARNING_PERIOD = 5 * 24 * 60 * 60; // 5 days in seconds
+  const seconds = Number(remainingSeconds);
+  return seconds > 0 && seconds <= WARNING_PERIOD;
 }

@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, Users, Clock, CircleCheck, Share2, Heart, MapPin, Calendar, Target, TrendingUp, Shield, FileText, Loader2 } from 'lucide-react';
+import { ArrowLeft, Users, Clock, CircleCheck, Share2, Heart, MapPin, Calendar, Target, TrendingUp, Shield, FileText, Loader2, AlertTriangle, Timer } from 'lucide-react';
 import { DonationDialog } from '@/components/donations/donation-dialog';
 import dynamic from 'next/dynamic';
 
@@ -42,6 +42,14 @@ interface CampaignDetailData {
     label: string;
     achieved: boolean;
   }>;
+  // Zakat-specific properties
+  isZakat?: boolean;
+  deadline?: number | null;
+  timeRemaining?: string;
+  poolStatus?: string;
+  redistributionStatus?: 'none' | 'pending' | 'executed';
+  inGracePeriod?: boolean;
+  canRedistribute?: boolean;
 }
 
 export default function CampaignDetail() {
@@ -162,10 +170,16 @@ export default function CampaignDetail() {
                 />
 
                 {/* Category Badge */}
-                <div className="absolute top-4 left-4">
+                <div className="absolute top-4 left-4 flex gap-2">
                   <span className="inline-flex items-center justify-center rounded-md px-3 py-1 text-sm font-semibold bg-background/90 backdrop-blur-sm border border-border">
                     {campaignDetail.category}
                   </span>
+                  {campaignDetail.isZakat && (
+                    <span className="inline-flex items-center gap-1 px-3 py-1 text-sm font-medium bg-emerald-600/90 backdrop-blur-sm text-white rounded-md border border-emerald-500">
+                      <Shield className="h-4 w-4" />
+                      Zakat
+                    </span>
+                  )}
                 </div>
 
                 {/* Verified Badge */}
@@ -274,6 +288,106 @@ export default function CampaignDetail() {
                   </div>
                 </div>
               </div>
+
+              {/* Zakat Status Indicator */}
+              {campaignDetail.isZakat && (
+                <div className={`bg-card border rounded-xl p-6 ${
+                  campaignDetail.inGracePeriod
+                    ? 'border-yellow-500/50 bg-yellow-500/5'
+                    : campaignDetail.canRedistribute
+                    ? 'border-red-500/50 bg-red-500/5'
+                    : campaignDetail.poolStatus === 'Completed'
+                    ? 'border-green-500/50 bg-green-500/5'
+                    : campaignDetail.poolStatus === 'Redistributed'
+                    ? 'border-orange-500/50 bg-orange-500/5'
+                    : 'border-primary/20 bg-primary/5'
+                }`}>
+                  <div className="flex items-start gap-3">
+                    {campaignDetail.inGracePeriod ? (
+                      <AlertTriangle className="h-5 w-5 text-yellow-600 mt-0.5 flex-shrink-0" />
+                    ) : campaignDetail.canRedistribute ? (
+                      <AlertTriangle className="h-5 w-5 text-red-600 mt-0.5 flex-shrink-0" />
+                    ) : campaignDetail.poolStatus === 'Completed' ? (
+                      <CircleCheck className="h-5 w-5 text-green-600 mt-0.5 flex-shrink-0" />
+                    ) : campaignDetail.poolStatus === 'Redistributed' ? (
+                      <AlertTriangle className="h-5 w-5 text-orange-600 mt-0.5 flex-shrink-0" />
+                    ) : (
+                      <Timer className="h-5 w-5 text-primary mt-0.5 flex-shrink-0" />
+                    )}
+                    <div className="flex-1">
+                      <div className="flex items-center justify-between mb-2">
+                        <h4 className="font-semibold text-lg flex items-center gap-2">
+                          Zakat Distribution Status
+                          {campaignDetail.poolStatus && (
+                            <span className={`text-xs px-2 py-1 rounded-md ${
+                              campaignDetail.poolStatus === 'Active'
+                                ? 'bg-blue-500/20 text-blue-700 dark:text-blue-400'
+                                : campaignDetail.poolStatus === 'Grace Period'
+                                ? 'bg-yellow-500/20 text-yellow-700 dark:text-yellow-400'
+                                : campaignDetail.poolStatus === 'Completed'
+                                ? 'bg-green-500/20 text-green-700 dark:text-green-400'
+                                : 'bg-orange-500/20 text-orange-700 dark:text-orange-400'
+                            }`}>
+                              {campaignDetail.poolStatus}
+                            </span>
+                          )}
+                        </h4>
+                        {campaignDetail.timeRemaining && (
+                          <span className="text-sm font-medium text-primary">
+                            {campaignDetail.timeRemaining}
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="space-y-2 text-sm">
+                        {campaignDetail.inGracePeriod ? (
+                          <>
+                            <p className="text-yellow-700 dark:text-yellow-400">
+                              <strong>Grace Period Active:</strong> The distribution deadline has passed. The Sharia council may grant a one-time 14-day extension, or funds will be automatically redistributed to an approved fallback pool.
+                            </p>
+                            <p className="text-muted-foreground">
+                              Remaining time in grace period: {campaignDetail.timeRemaining || 'Check deadline'}
+                            </p>
+                          </>
+                        ) : campaignDetail.canRedistribute ? (
+                          <>
+                            <p className="text-red-700 dark:text-red-400">
+                              <strong>Ready for Redistribution:</strong> The grace period has ended. Anyone can trigger redistribution of the funds to an approved fallback pool.
+                            </p>
+                          </>
+                        ) : campaignDetail.poolStatus === 'Completed' ? (
+                          <p className="text-green-700 dark:text-green-400">
+                            <strong>Successfully Completed:</strong> The organizer has distributed the Zakat funds to the beneficiaries within the required timeframe.
+                          </p>
+                        ) : campaignDetail.poolStatus === 'Redistributed' ? (
+                          <p className="text-orange-700 dark:text-orange-400">
+                            <strong>Redistributed:</strong> The funds were redistributed to an approved fallback pool after the deadline passed.
+                          </p>
+                        ) : (
+                          <>
+                            <p className="text-foreground">
+                              <strong>Active Zakat Pool:</strong> Per Shafi'i requirements, this Zakat campaign has a 30-day hard limit for fund distribution.
+                            </p>
+                            <p className="text-muted-foreground">
+                              Time remaining for organizer to distribute funds: <span className="font-medium text-foreground">{campaignDetail.timeRemaining || 'Loading...'}</span>
+                            </p>
+                          </>
+                        )}
+                      </div>
+
+                      {/* Zakat Compliance Badge */}
+                      <div className="mt-4 pt-4 border-t border-border/50">
+                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                          <Shield className="h-4 w-4" />
+                          <span>
+                            Shafi'i Compliant • 30-day distribution period • 7-day grace period • One-time 14-day extension available
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* Milestones */}
               <div className="bg-card border border-border rounded-xl p-6">

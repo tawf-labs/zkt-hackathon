@@ -5,6 +5,7 @@ import "./core/ProposalManager.sol";
 import "./core/VotingManager.sol";
 import "./core/ShariaReviewManager.sol";
 import "./core/PoolManager.sol";
+import "./core/ZakatEscrowManager.sol";
 import "../tokens/MockIDRX.sol";
 import "../tokens/DonationReceiptNFT.sol";
 import "../tokens/VotingToken.sol";
@@ -12,18 +13,21 @@ import "../tokens/VotingToken.sol";
 /**
  * @title ZKTCore
  * @notice Orchestrator contract for the modular ZKT DAO system
- * @dev Deploys and coordinates: ProposalManager, VotingManager, ShariaReviewManager, PoolManager
+ * @dev Deploys and coordinates: ProposalManager, VotingManager, ShariaReviewManager, PoolManager, ZakatEscrowManager
  * Uses VotingToken (non-transferable ERC20) for community voting power
+ * Routes ZakatCompliant campaigns to ZakatEscrowManager (with 30-day timeout)
+ * Routes Normal campaigns to PoolManager (no timeout restrictions)
  */
 contract ZKTCore is AccessControl {
     bytes32 public constant ORGANIZER_ROLE = keccak256("ORGANIZER_ROLE");
     bytes32 public constant KYC_ORACLE_ROLE = keccak256("KYC_ORACLE_ROLE");
     bytes32 public constant SHARIA_COUNCIL_ROLE = keccak256("SHARIA_COUNCIL_ROLE");
-    
+
     ProposalManager public proposalManager;
     VotingManager public votingManager;
     ShariaReviewManager public shariaReviewManager;
     PoolManager public poolManager;
+    ZakatEscrowManager public zakatEscrowManager;
     
     MockIDRX public idrxToken;
     DonationReceiptNFT public receiptNFT;
@@ -43,17 +47,21 @@ contract ZKTCore is AccessControl {
         votingManager = new VotingManager(address(proposalManager), _votingToken);
         shariaReviewManager = new ShariaReviewManager(address(proposalManager));
         poolManager = new PoolManager(address(proposalManager), _idrxToken, _receiptNFT);
-        
+        zakatEscrowManager = new ZakatEscrowManager(address(proposalManager), _idrxToken, _receiptNFT);
+
         // Grant CommunityDAO all functional roles so it can delegate calls
         proposalManager.grantRole(proposalManager.ORGANIZER_ROLE(), address(this));
         proposalManager.grantRole(proposalManager.KYC_ORACLE_ROLE(), address(this));
         shariaReviewManager.grantRole(shariaReviewManager.SHARIA_COUNCIL_ROLE(), address(this));
         poolManager.grantRole(poolManager.ADMIN_ROLE(), address(this));
+        zakatEscrowManager.grantRole(zakatEscrowManager.ADMIN_ROLE(), address(this));
+        zakatEscrowManager.grantRole(zakatEscrowManager.SHARIA_COUNCIL_ROLE(), address(this));
         
         // Grant cross-module permissions
         proposalManager.grantRole(proposalManager.VOTING_MANAGER_ROLE(), address(votingManager));
         proposalManager.grantRole(proposalManager.VOTING_MANAGER_ROLE(), address(shariaReviewManager));
         proposalManager.grantRole(proposalManager.VOTING_MANAGER_ROLE(), address(poolManager));
+        proposalManager.grantRole(proposalManager.VOTING_MANAGER_ROLE(), address(zakatEscrowManager));
         
         // Setup deployer as DEFAULT_ADMIN_ROLE to grant initial roles
         _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
@@ -158,27 +166,142 @@ contract ZKTCore is AccessControl {
     }
     
     // Pool functions
-    function createCampaignPool(uint256 proposalId) external returns (uint256) {
-        // Only the proposal organizer can create the pool for their approved proposal
+
+    /**
+     * @notice Internal function to create campaign pool with routing
+     * @dev Routes to ZakatEscrowManager for Zakat campaigns, PoolManager for Normal campaigns
+     */
+    function _createCampaignPoolInternal(
+        uint256 proposalId,
+        address fallbackPool
+    ) internal returns (uint256) {
         IProposalManager.Proposal memory proposal = proposalManager.getProposal(proposalId);
         require(msg.sender == proposal.organizer, "Only proposal organizer");
         require(proposal.status == IProposalManager.ProposalStatus.ShariaApproved, "Not Sharia approved");
-        
-        return poolManager.createCampaignPool(proposalId);
-    }
-    
-    function donate(uint256 poolId, uint256 amount, string memory ipfsCID) external {
-        poolManager.donate(msg.sender, poolId, amount, ipfsCID);
+
+        // Route based on campaign type
+        if (proposal.campaignType == IProposalManager.CampaignType.ZakatCompliant) {
+            // Zakat campaigns go to ZakatEscrowManager with timeout enforcement
+            return zakatEscrowManager.createZakatPool(proposalId, fallbackPool);
+        } else {
+            // Normal campaigns go to PoolManager without timeout
+            return poolManager.createCampaignPool(proposalId);
+        }
     }
 
+    /**
+     * @notice Create campaign pool with automatic routing based on campaign type
+     * @dev ZakatCompliant campaigns route to ZakatEscrowManager (30-day timeout)
+     *      Normal campaigns route to PoolManager (no timeout)
+     * @param proposalId Approved proposal ID
+     * @param fallbackPool Fallback pool for Zakat redistribution (ignored for Normal campaigns)
+     * @return poolId Created pool ID
+     */
+    function createCampaignPool(uint256 proposalId, address fallbackPool) external returns (uint256) {
+        return _createCampaignPoolInternal(proposalId, fallbackPool);
+    }
+
+    /**
+     * @notice Create campaign pool (legacy compatibility - uses default fallback for Zakat)
+     */
+    function createCampaignPool(uint256 proposalId) external returns (uint256) {
+        return _createCampaignPoolInternal(proposalId, address(0));
+    }
+
+    /**
+     * @notice Donate to a campaign pool
+     */
+    function donate(uint256 poolId, uint256 amount, string memory ipfsCID) external {
+        // Route to appropriate manager based on pool existence
+        // Try ZakatEscrowManager first, then fallback to PoolManager
+        try zakatEscrowManager.donate(msg.sender, poolId, amount, ipfsCID) {
+            return; // Success - was a Zakat pool
+        } catch {
+            // Fallback to PoolManager
+            poolManager.donate(msg.sender, poolId, amount, ipfsCID);
+        }
+    }
+
+    /**
+     * @notice Make a private donation using Pedersen commitment
+     */
     function donatePrivate(uint256 poolId, uint256 amount, bytes32 commitment, string memory ipfsCID) external {
-        poolManager.donatePrivate(msg.sender, poolId, amount, commitment, ipfsCID);
+        // Route to appropriate manager based on pool existence
+        try zakatEscrowManager.donatePrivate(msg.sender, poolId, amount, commitment, ipfsCID) {
+            return; // Success - was a Zakat pool
+        } catch {
+            // Fallback to PoolManager
+            poolManager.donatePrivate(msg.sender, poolId, amount, commitment, ipfsCID);
+        }
     }
-    
+
+    /**
+     * @notice Withdraw funds from campaign pool
+     */
     function withdrawFunds(uint256 poolId) external {
-        poolManager.withdrawFunds(msg.sender, poolId);
+        // Route to appropriate manager based on pool existence
+        try zakatEscrowManager.withdrawFunds(msg.sender, poolId) {
+            return; // Success - was a Zakat pool
+        } catch {
+            // Fallback to PoolManager
+            poolManager.withdrawFunds(msg.sender, poolId);
+        }
     }
-    
+
+    // ============ Zakat-Specific Functions ============
+
+    /**
+     * @notice Check timeout status of a Zakat pool
+     */
+    function checkZakatTimeout(uint256 poolId) external {
+        zakatEscrowManager.checkTimeout(poolId);
+    }
+
+    /**
+     * @notice Sharia council grants extension to Zakat pool deadline
+     */
+    function councilExtendZakatDeadline(uint256 poolId, string memory reasoning)
+        external
+        onlyRole(SHARIA_COUNCIL_ROLE)
+    {
+        zakatEscrowManager.councilExtendDeadline(poolId, reasoning);
+    }
+
+    /**
+     * @notice Execute redistribution to fallback pool
+     */
+    function executeZakatRedistribution(uint256 poolId) external {
+        zakatEscrowManager.executeRedistribution(poolId);
+    }
+
+    /**
+     * @notice Propose a fallback pool for Zakat redistribution
+     */
+    function proposeFallbackPool(address pool, string memory reasoning) external {
+        zakatEscrowManager.proposeFallbackPool(pool, reasoning);
+    }
+
+    /**
+     * @notice Sharia council vets a proposed fallback pool
+     */
+    function vetFallbackPool(address pool) external onlyRole(SHARIA_COUNCIL_ROLE) {
+        zakatEscrowManager.vetFallbackPool(pool);
+    }
+
+    /**
+     * @notice DAO ratifies a vetted fallback pool
+     */
+    function ratifyFallbackPool(address pool) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        zakatEscrowManager.ratifyFallbackPool(pool);
+    }
+
+    /**
+     * @notice Set default fallback pool for Zakat redistribution
+     */
+    function setDefaultFallbackPool(address pool) external {
+        zakatEscrowManager.setDefaultFallbackPool(pool);
+    }
+
     // ============ View Functions ============
 
     function proposalCount() external view returns (uint256) {
@@ -251,5 +374,61 @@ contract ZKTCore is AccessControl {
     
     function getPoolManagerAddress() external view returns (address) {
         return address(poolManager);
+    }
+
+    function getZakatEscrowManagerAddress() external view returns (address) {
+        return address(zakatEscrowManager);
+    }
+
+    // ============ Zakat Pool View Functions ============
+
+    /**
+     * @notice Get Zakat pool details
+     */
+    function getZakatPool(uint256 poolId) external view returns (ZakatEscrowManager.ZakatPool memory) {
+        return zakatEscrowManager.getPool(poolId);
+    }
+
+    /**
+     * @notice Get time remaining for Zakat pool withdrawal
+     */
+    function getZakatTimeRemaining(uint256 poolId)
+        external
+        view
+        returns (
+            uint256 remaining,
+            bool inGracePeriod,
+            bool canRedistribute
+        )
+    {
+        return zakatEscrowManager.getTimeRemaining(poolId);
+    }
+
+    /**
+     * @notice Check if Zakat pool is ready for redistribution
+     */
+    function isZakatReadyForRedistribution(uint256 poolId) external view returns (bool) {
+        return zakatEscrowManager.isReadyForRedistribution(poolId);
+    }
+
+    /**
+     * @notice Get Zakat pool status as string
+     */
+    function getZakatPoolStatusString(uint256 poolId) external view returns (string memory) {
+        return zakatEscrowManager.getPoolStatusString(poolId);
+    }
+
+    /**
+     * @notice Get fallback pool details
+     */
+    function getFallbackPool(address pool) external view returns (ZakatEscrowManager.FallbackPoolData memory) {
+        return zakatEscrowManager.getFallbackPool(pool);
+    }
+
+    /**
+     * @notice Get all fallback pools
+     */
+    function getAllFallbackPools() external view returns (address[] memory) {
+        return zakatEscrowManager.getAllFallbackPools();
     }
 }

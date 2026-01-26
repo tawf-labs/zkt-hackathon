@@ -7,6 +7,7 @@ import "../src/tokens/VotingToken.sol";
 import "../src/DAO/ZKTCore.sol";
 import "../src/DAO/interfaces/IProposalManager.sol";
 import "../src/DAO/core/PoolManager.sol";
+import "../src/DAO/core/ZakatEscrowManager.sol";
 
 contract ZKTCoreTest is Test {
     MockIDRX public idrxToken;
@@ -31,28 +32,34 @@ contract ZKTCoreTest is Test {
         receiptNFT = new DonationReceiptNFT();
         votingToken = new VotingToken();
         dao = new ZKTCore(address(idrxToken), address(receiptNFT), address(votingToken));
-        
+
         // Grant MINTER_ROLE to PoolManager
         receiptNFT.grantRole(receiptNFT.MINTER_ROLE(), dao.getPoolManagerAddress());
-        
+
+        // Grant MINTER_ROLE to ZakatEscrowManager for NFT receipts
+        receiptNFT.grantRole(receiptNFT.MINTER_ROLE(), dao.getZakatEscrowManagerAddress());
+
         // Grant MINTER_ROLE to DAO for VotingToken
         votingToken.grantRole(votingToken.MINTER_ROLE(), address(dao));
-        
+
         // Setup roles (no ADMIN_ROLE - fully decentralized)
         dao.grantOrganizerRole(organizer);
         dao.grantShariaCouncilRole(shariaCouncil1);
         dao.grantShariaCouncilRole(shariaCouncil2);
         dao.grantShariaCouncilRole(shariaCouncil3);
         dao.grantKYCOracleRole(deployer);  // Grant deployer KYC oracle role for tests
-        
+
         // Grant voting power (1 token = 1 vote)
         dao.grantVotingPower(member1, 100 * 10**18);
         dao.grantVotingPower(member2, 100 * 10**18);
         dao.grantVotingPower(member3, 100 * 10**18);
-        
+
         // Give IDRX to donors
         idrxToken.adminMint(donor1, 10000 * 10**18);
         idrxToken.adminMint(donor2, 10000 * 10**18);
+
+        // Setup default fallback pool for Zakat tests (use deployer as fallback)
+        dao.setDefaultFallbackPool(deployer);
     }
     
     function testCreateProposal() public {
@@ -278,20 +285,21 @@ contract ZKTCoreTest is Test {
         
         // Donor1 donates (first donation) with IPFS CID from Pinata
         vm.startPrank(donor1);
-        idrxToken.approve(address(dao.getPoolManagerAddress()), 500 * 10**18);
+        // For Zakat campaigns, approve ZakatEscrowManager instead of PoolManager
+        idrxToken.approve(address(dao.getZakatEscrowManagerAddress()), 500 * 10**18);
         dao.donate(poolId, 500 * 10**18, "QmX1Y2Z3ReceiptMetadata1");
         vm.stopPrank();
-        
+
         // Check first receipt NFT minted with IPFS metadata
         uint256[] memory donor1Receipts = receiptNFT.getDonorReceipts(donor1);
         assertEq(donor1Receipts.length, 1);
         assertEq(receiptNFT.ownerOf(donor1Receipts[0]), donor1);
-        
+
         // Verify IPFS URI is set correctly
         uint256 firstTokenId = donor1Receipts[0];
         string memory tokenURI = receiptNFT.tokenURI(firstTokenId);
         assertEq(tokenURI, "ipfs://QmX1Y2Z3ReceiptMetadata1");
-        
+
         // Verify metadata stored correctly
         (
             uint256 poolId_,
@@ -308,42 +316,42 @@ contract ZKTCoreTest is Test {
         assertEq(amount_, 500 * 10**18);
         assertEq(ipfsCID_, "QmX1Y2Z3ReceiptMetadata1");
         assertTrue(isActive_);
-        
+
         // Donor1 donates again (should mint ANOTHER receipt NFT with different IPFS CID)
         vm.startPrank(donor1);
-        idrxToken.approve(address(dao.getPoolManagerAddress()), 300 * 10**18);
+        idrxToken.approve(address(dao.getZakatEscrowManagerAddress()), 300 * 10**18);
         dao.donate(poolId, 300 * 10**18, "QmA2B3C4ReceiptMetadata2");
         vm.stopPrank();
-        
+
         // Check second receipt NFT minted for same donor
         donor1Receipts = receiptNFT.getDonorReceipts(donor1);
         assertEq(donor1Receipts.length, 2); // Now has 2 receipt NFTs
-        
+
         // Verify second NFT has different IPFS CID
         uint256 secondTokenId = donor1Receipts[1];
         string memory tokenURI2 = receiptNFT.tokenURI(secondTokenId);
         assertEq(tokenURI2, "ipfs://QmA2B3C4ReceiptMetadata2");
-        
+
         // Donor2 donates with their own IPFS CID
         vm.startPrank(donor2);
-        idrxToken.approve(address(dao.getPoolManagerAddress()), 600 * 10**18);
+        idrxToken.approve(address(dao.getZakatEscrowManagerAddress()), 600 * 10**18);
         dao.donate(poolId, 600 * 10**18, "QmD5E6F7ReceiptMetadata3");
         vm.stopPrank();
-        
+
         // Check donor2 has 1 receipt NFT
         uint256[] memory donor2Receipts = receiptNFT.getDonorReceipts(donor2);
         assertEq(donor2Receipts.length, 1);
-        
-        // Check pool status
-        PoolManager.CampaignPool memory pool = dao.getPool(poolId);
-        assertEq(pool.raisedAmount, 1400 * 10**18); // 500 + 300 + 600
-        assertTrue(pool.raisedAmount >= pool.fundingGoal);
-        
+
+        // Check pool status - use getZakatPool for Zakat campaigns
+        ZakatEscrowManager.ZakatPool memory zakatPool = dao.getZakatPool(poolId);
+        assertEq(zakatPool.raisedAmount, 1400 * 10**18); // 500 + 300 + 600
+        assertTrue(zakatPool.raisedAmount >= zakatPool.fundingGoal);
+
         // Organizer withdraws
         uint256 organizerBalanceBefore = idrxToken.balanceOf(organizer);
         vm.prank(organizer);
         dao.withdrawFunds(poolId);
-        
+
         assertEq(idrxToken.balanceOf(organizer), organizerBalanceBefore + 1400 * 10**18);
     }
     
@@ -458,7 +466,8 @@ contract ZKTCoreTest is Test {
         
         // Donor donates and passes IPFS CID
         vm.startPrank(donor1);
-        idrxToken.approve(address(dao.getPoolManagerAddress()), 500 * 10**18);
+        // For Zakat campaigns, approve ZakatEscrowManager
+        idrxToken.approve(address(dao.getZakatEscrowManagerAddress()), 500 * 10**18);
         dao.donate(poolId, 500 * 10**18, pinataIPFSCID);
         vm.stopPrank();
         
@@ -484,12 +493,14 @@ contract ZKTCoreTest is Test {
             
         ) = receiptNFT.tokenMetadata(tokenId);
         assertEq(storedIPFSCID, pinataIPFSCID);
-        
+
         // Test that donation without IPFS CID fails
+        // Call ZakatEscrowManager directly to test the revert (dao.donate has try-catch fallback)
+        address zakatEscrowMgr = dao.getZakatEscrowManagerAddress();
         vm.startPrank(donor2);
-        idrxToken.approve(address(dao.getPoolManagerAddress()), 300 * 10**18);
+        idrxToken.approve(zakatEscrowMgr, 300 * 10**18);
         vm.expectRevert("IPFS CID required");
-        dao.donate(poolId, 300 * 10**18, ""); // Empty CID should fail
+        ZakatEscrowManager(zakatEscrowMgr).donate(donor2, poolId, 300 * 10**18, "");
         vm.stopPrank();
     }
 }
