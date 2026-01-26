@@ -96,12 +96,12 @@ The ZKT Zakat DAO is a decentralized platform for Sharia-compliant charitable cr
 | **Donor** | Hold IDRX tokens | Donate to campaigns (public or private) |
 | **Admin** | DEFAULT_ADMIN_ROLE (deployer) | Configure parameters, grant Sharia Council/KYC Oracle roles |
 
-### Important: KYC Registry vs Proposal KYC
+### Important: KYC Registry vs Recipient KYC
 
 | Type | Description | When Required |
 |------|-------------|---------------|
 | **Organizer KYC Registry** | Identity verification of the person applying to be an organizer | Required BEFORE community votes on organizer application |
-| **Proposal KYC** | Verification of a specific campaign proposal | NOT REQUIRED - Only organizer registry needs KYC verification |
+| **Recipient KYC** | Identity verification of individuals who will receive the funds | Required for Normal/Zakat campaigns (not Emergency) |
 
 ### Organizer Application Flow (Hybrid - Decentralized)
 
@@ -178,16 +178,16 @@ function grantVotingPowerNFT(address account) external
 
 ### Campaign Type Overview
 
-| Campaign Type | Manager | KYC Required | Voting Period | Sharia Review | Time Limit |
-|---------------|---------|--------------|---------------|----------------|------------|
-| **Normal** | PoolManager | No (organizer pre-verified) | 7 days | Standard bundle | None |
-| **Zakat** | ZakatEscrowManager | No (organizer pre-verified) | 7 days | Standard bundle | 30-day distribution |
-| **Emergency** | EmergencyEscrowManager | No (organizer pre-verified) | 24-48 hours (prioritized) | SKIPS 7-day period | DRCP rules |
+| Campaign Type | Manager | Recipient KYC Required | Voting Period | Sharia Review | Time Limit |
+|---------------|---------|------------------------|---------------|----------------|------------|
+| **Normal** | PoolManager | Yes (verify recipients) | 7 days | Standard bundle | None |
+| **Zakat** | ZakatEscrowManager | Yes (verify recipients) | 7 days | Standard bundle | 30-day distribution |
+| **Emergency** | EmergencyEscrowManager | No (disaster victims) | 24-48 hours (prioritized) | SKIPS 7-day period | DRCP rules |
 
 ### Key Emergency Proposal Rules
 
 - **Organizer MUST be in KYC Registry** (verified beforehand)
-- **Proposal itself does NOT need KYC** (already verified via organizer registry)
+- **Recipients do NOT need KYC** (disaster victims, urgent aid scenarios)
 - **Expedited community voting** (24-48 hours instead of 7 days, prioritized queue)
 - **SKIPS Sharia review period** (no 7-day wait, immediate approval after community vote)
 - **Uses EmergencyEscrowManager** (DRCP-style parametric disaster response)
@@ -210,12 +210,12 @@ flowchart TD
     H -->|Zakat| J[ZakatEscrowManager]
     H -->|Normal| K[PoolManager]
 
-    I --> L[No Proposal KYC Needed]
+    I --> L[No Recipient KYC Needed]
     L --> M[Expedited Voting: 24-48h (Prioritized)]
     M --> O[SKIP Sharia Review]
     O --> P[Emergency Pool Created]
 
-    J --> Q[No Proposal KYC Needed]
+    J --> Q[Recipient KYC Required]
     Q --> R[Community Vote: 7 days]
     R --> S{Vote Passes?}
     S -->|Yes| T[Auto-Bundle Sharia Review]
@@ -224,7 +224,7 @@ flowchart TD
     U -->|Yes| V[Zakat Pool Created]
     U -->|No| X
 
-    K --> W[No Proposal KYC Needed]
+    K --> W[Recipient KYC Required]
     W --> R
 
     P --> Y[Emergency Pool Rules]
@@ -277,11 +277,11 @@ uint256 proposalId = zktCore.createProposal(
     "Immediate relief for earthquake victims...", // description
     500000 * 10**18,                  // fundingGoal (500K IDRX)
     true,                             // isEmergency = TRUE
-    bytes32(0),                       // mockZKKYCProof
+    bytes32(0),                       // mockZKKYCProof (recipients not needed)
     [],                               // zakatChecklistItems (empty for emergency)
     "ipfs://Qm..."                    // metadataURI
 );
-// Status: Draft, KYCStatus: NotRequired (organizer already KYC'd)
+// Status: Draft, KYCStatus: NotRequired (disaster victims)
 ```
 
 **Normal/Zakat Proposal:**
@@ -292,14 +292,23 @@ uint256 proposalId = zktCore.createProposal(
     "Build wells for 5 villages...",  // description
     100000 * 10**18,                  // fundingGoal (100K IDRX)
     false,                            // isEmergency = FALSE
-    bytes32(0),                       // mockZKKYCProof (not needed)
+    bytes32(0),                       // mockZKKYCProof (for recipients)
     ["Must reach poor only", "No overhead deducted"],  // zakatChecklistItems
     "ipfs://Qm..."                    // metadataURI
 );
-// Status: Draft, KYCStatus: NotRequired (organizer already KYC'd)
+// Status: Draft, KYCStatus: Pending (recipients need verification)
 ```
 
-#### Phase 3: Community Vote (No KYC Step Needed)
+#### Phase 3: Recipient KYC Verification (Normal/Zakat Only)
+
+```solidity
+// KYC Oracle verifies the RECIPIENTS who will receive funds
+zktCore.updateKYCStatus(proposalId, KYCStatus.Verified, "Recipients verified: 50 families in Village A");
+// Required before community vote for non-emergency proposals
+// Emergency proposals skip this (disaster victims don't need pre-verification)
+```
+
+#### Phase 4: Community Vote (No KYC Step Needed)
 
 **Emergency - Expedited (24-48 hours, prioritized queue):**
 ```solidity
@@ -317,7 +326,7 @@ zktCore.submitForCommunityVote(proposalId);
 // NFT holders vote with their vZKT NFT power
 ```
 
-#### Phase 4: Sharia Council Review (Emergency Skips This)
+#### Phase 5: Sharia Council Review (Emergency Skips This)
 
 **Emergency - SKIPS Sharia Review:**
 ```solidity
@@ -339,7 +348,7 @@ zktCore.reviewProposal(msg.sender, bundleId, proposalId, true, CampaignType.Zaka
 zktCore.finalizeShariaBundle(bundleId);
 ```
 
-#### Phase 5: Create Campaign Pool
+#### Phase 6: Create Campaign Pool
 
 ```solidity
 // Organizer creates pool (auto-routed by campaign type)
@@ -351,7 +360,7 @@ uint256 poolId = zktCore.createCampaignPool(proposalId, fallbackPoolAddress);
 // Normal     -> PoolManager (no timeout)
 ```
 
-#### Phase 6: Donations
+#### Phase 7: Donations
 
 ```solidity
 // Public donation
@@ -362,7 +371,7 @@ zktCore.donate(poolId, amount, "ipfs://QmReceiptMetadata...");
 zktCore.donatePrivate(poolId, amount, commitment, "ipfs://Qm...");
 ```
 
-#### Phase 7: Fund Distribution
+#### Phase 8: Fund Distribution
 
 **Emergency Pool (DRCP Rules):**
 ```solidity
@@ -402,7 +411,7 @@ zktCore.executeZakatRedistribution(poolId);
 | Feature | Emergency (DRCP) | Zakat Campaign | Normal Campaign |
 |---------|-----------------|----------------|-----------------|
 | **Manager** | EmergencyEscrowManager | ZakatEscrowManager | PoolManager |
-| **Proposal KYC** | Not required (organizer pre-verified) | Not required (organizer pre-verified) | Not required (organizer pre-verified) |
+| **Recipient KYC** | Not required (disaster victims) | Required (verify recipients) | Required (verify recipients) |
 | **Voting Period** | 24-48 hours (prioritized queue) | 7 days | 7 days |
 | **Sharia Review** | SKIPPED (immediate after vote) | Standard bundle | Standard bundle |
 | **Distribution** | Parametric/Instant | 30-day limit | No limit |
@@ -467,7 +476,7 @@ After Grace Period: Auto-redistribute to fallback pool
 | Aspect | Emergency | Standard (Zakat/Normal) |
 |--------|-----------|------------------------|
 | **Organizer Verification** | Must be in KYC Registry beforehand | Must be in KYC Registry beforehand |
-| **Proposal KYC** | Not required | Not required |
+| **Recipient KYC** | Not required (disaster victims) | Required (verify fund recipients) |
 | **Voting Queue** | Prioritized queue (24-48h) | Standard queue (7 days) |
 | **Quorum Threshold** | Reduced for speed | 10% of vZKT NFT supply |
 | **Sharia Review** | SKIPPED entirely | Bundled (5 or 7 days) |
@@ -539,7 +548,7 @@ enum CampaignType {
 | `grantKYCOracleRole(address)` | Admin only | Grant KYC verifier permissions |
 | `grantVotingPowerNFT(address)` | Permissionless | Mint voting power NFT |
 | `createProposal(...)` | Organizer | Create new campaign proposal |
-| `updateKYCStatus(uint256, KYCStatus, string)` | KYC Oracle | Update proposal KYC status (deprecated - not used) |
+| `updateKYCStatus(uint256, KYCStatus, string)` | KYC Oracle | Update recipient KYC status |
 | `submitForCommunityVote(uint256)` | Organizer | Start standard voting period |
 | `submitForEmergencyVote(uint256)` | Organizer | Start expedited voting |
 | `castVote(uint256, uint8)` | Any voter | Cast vote (0=no, 1=yes, 2=abstain) |
