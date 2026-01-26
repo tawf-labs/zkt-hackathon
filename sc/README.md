@@ -387,8 +387,8 @@ zktCore.submitForCommunityVote(proposalId);
 ```solidity
 // Emergency proposals skip Sharia review entirely
 // After community vote passes, pool is created immediately
-uint256 poolId = zktCore.createCampaignPool(proposalId, fallbackPoolAddress);
-// Campaign type auto-determined: Emergency
+uint256 poolId = zktCore.createEmergencyPool(proposalId);
+// Campaign type auto-determined: Emergency (no fallback needed)
 ```
 
 **Normal/Zakat - Standard Bundle:**
@@ -407,12 +407,19 @@ zktCore.finalizeShariaBundle(bundleId);
 
 ```solidity
 // Organizer creates pool (auto-routed by campaign type)
-uint256 poolId = zktCore.createCampaignPool(proposalId, fallbackPoolAddress);
+// Only Zakat pools need fallback addresses
+if (campaignType == CampaignType.ZakatCompliant) {
+    uint256 poolId = zktCore.createZakatPool(proposalId, fallbackPoolAddress);
+} else if (campaignType == CampaignType.Emergency) {
+    uint256 poolId = zktCore.createEmergencyPool(proposalId);
+} else {
+    uint256 poolId = zktCore.createNormalPool(proposalId);
+}
 
 // Routing:
-// Emergency  -> EmergencyEscrowManager (DRCP-style)
-// Zakat      -> ZakatEscrowManager (30-day timeout)
-// Normal     -> PoolManager (no timeout)
+// Emergency  -> EmergencyEscrowManager (no fallback needed)
+// Zakat      -> ZakatEscrowManager (requires fallback for redistribution)
+// Normal     -> PoolManager (no fallback needed)
 ```
 
 #### Phase 7: Donations
@@ -609,7 +616,7 @@ enum CampaignType {
 | `castVote(uint256, uint8)` | Any voter | Cast vote (0=no, 1=yes, 2=abstain) |
 | `finalizeCommunityVote(uint256)` | Any | End voting and count |
 | `reviewEmergencyProposal(uint256, bool, bytes32)` | Sharia Council | Expedited emergency review (deprecated - emergency skips Sharia) |
-| `createCampaignPool(uint256, address)` | Organizer | Create fundraising pool |
+| `createCampaignPool(uint256, address)` | Organizer | Create fundraising pool (address only for Zakat fallback) |
 | `donate(uint256, uint256, string)` | Any | Donate to pool |
 | `withdrawFunds(uint256)` | Organizer | Withdraw raised funds |
 | `executeEmergencyRelease(uint256, uint256, string)` | Emergency pool | Parametric fund release |
@@ -647,7 +654,7 @@ enum CampaignType {
 
 | Function | Access Control | Purpose |
 |----------|----------------|---------|
-| `createCampaignPool(uint256)` | Admin | Create Normal campaign pool |
+| `createNormalPool(uint256)` | Admin | Create Normal campaign pool (no fallback needed) |
 | `donate(address, uint256, uint256, string)` | PoolManager | Accept donations |
 | `donatePrivate(...)` | PoolManager | Accept private donations |
 | `withdrawFunds(address, uint256)` | Organizer | Withdraw all funds |
@@ -745,11 +752,122 @@ stateDiagram-v2
 ```mermaid
 flowchart LR
     A[Community Member] -->|proposeFallbackPool| B[Proposed]
-    B -->|vetFallbackPool| C[Sharia Council]
-    C -->|Approve| D[Approved]
-    D -->|Used for| E[Zakat Redistribution]
-    D -->|revokeFallbackPool| F[Revoked]
+    B -->|vetFallbackPool| C[Sharia Council Review]
+    C -->|approveFallbackPool| D[Pre-Approved Registry]
+    D -->|Organizer selects during| E[Zakat Pool Creation]
+    E -->|If timeout occurs| F[Auto-Redistribute]
+    D -->|revokeFallbackPool| G[Removed from Registry]
 ```
+
+### How Fallback Pools Are Determined (Zakat Only)
+
+Fallback pools are **only required for Zakat campaigns** due to the 30-day Sharia distribution requirement. If funds aren't distributed in time, they must be redirected to another Zakat-compliant cause.
+
+#### Timeline: Fallback Pools Must Be Pre-Approved
+
+**BEFORE Zakat Campaign Creation:**
+```
+1. Community proposes fallback pools → 2. Sharia Council vets → 3. Pool approved → 4. Available for selection
+```
+
+**DURING Zakat Campaign Creation:**
+```
+Organizer selects from pre-approved fallback pools (or uses system default)
+```
+
+**Why Pre-Approval is Required:**
+- **No delays**: When Zakat timeout occurs, immediate redistribution needed
+- **Sharia compliance**: Fallback pools already verified as Zakat-eligible
+- **Emergency readiness**: No time to vet new pools during crisis
+
+#### Fallback Pool Selection Priority:
+
+1. **Organizer-specified fallback** (chosen from pre-approved list during Zakat pool creation)
+2. **Default system fallback** (set by admin/DAO from pre-approved pools)
+3. **Emergency council-approved fallback** (if others become unavailable)
+
+#### Fallback Pool Approval Process (Happens BEFORE Campaign Creation):
+
+```solidity
+// Step 1: Anyone can propose a fallback pool (ongoing process)
+function proposeFallbackPool(address poolAddress, string memory reasoning) external
+
+// Step 2: Sharia Council vets the proposed pool (ongoing review)
+function vetFallbackPool(address poolAddress) external onlyRole(SHARIA_COUNCIL_ROLE)
+
+// Step 3: Pool becomes available for selection (pre-approved registry)
+function approveFallbackPool(address poolAddress) external onlyRole(SHARIA_COUNCIL_ROLE)
+
+// Step 4: Organizer selects during Zakat pool creation
+function createZakatPool(uint256 proposalId, address preApprovedFallback) external
+
+// Admin/DAO can set system default from pre-approved pools
+function setDefaultFallbackPool(address poolAddress) external onlyRole(DEFAULT_ADMIN_ROLE)
+```
+
+#### Fallback Pool Types & Creation:
+
+**Fallback pools can be:**
+
+1. **External established organizations** (not created through ZKT DAO):
+   - Existing mosque food programs
+   - Established Islamic charities with IDRX wallets
+   - Government zakat distribution agencies
+   - Traditional NGOs that accept crypto donations
+
+2. **ZKT DAO Normal campaigns** (no fallback needed):
+   - Normal campaigns don't have time limits
+   - Can serve as fallbacks for Zakat campaigns
+   - Created through standard DAO process without fallback requirement
+
+3. **Bootstrap fallback pools** (admin-created initially):
+   - Core team creates initial fallback pools during system launch
+   - Gradually replaced by community-created Normal campaigns
+   - Ensures system has fallbacks from day one
+
+#### Creation Process by Type:
+
+```solidity
+// Type 1: External organizations (just register their wallet)
+function registerExternalFallback(
+    address walletAddress, 
+    string memory organizationDetails,
+    string memory shariaComplianceProof
+) external
+
+// Type 2: Normal ZKT campaigns (standard process, no fallback needed)
+function createNormalPool(uint256 proposalId) external
+// These can later be approved as fallbacks for Zakat campaigns
+
+// Type 3: Bootstrap pools (admin-created during launch phase)
+function createBootstrapFallback(
+    string memory description,
+    address recipientWallet
+) external onlyRole(DEFAULT_ADMIN_ROLE)
+```
+
+#### Bootstrap Strategy:
+
+**Phase 1 (Launch)**: Admin creates 3-5 bootstrap fallback pools
+**Phase 2 (Growth)**: Community Normal campaigns become fallback options  
+**Phase 3 (Mature)**: External organizations register as fallbacks
+
+#### Example Fallback Pools:
+
+**External Organizations:**
+- **Masjid Al-Ikhlas food program** (existing mosque with IDRX wallet)
+- **Rumah Yatim Indonesia** (established orphanage accepting crypto)
+- **BAZNAS digital zakat** (government agency with crypto support)
+
+**ZKT DAO Normal Campaigns:**
+- **"Monthly Poor Family Support"** (Normal campaign, no time limit)
+- **"Islamic School Scholarships"** (Normal campaign, ongoing)
+- **"Medical Aid Fund"** (Normal campaign, perpetual)
+
+**Bootstrap Pools (Launch Phase):**
+- **"Emergency Zakat Redistribution Pool #1"** (admin-created)
+- **"Default Poor Relief Fund"** (admin-created)
+- **"System Fallback Pool"** (admin-created)
 
 ### Bundle Creation Triggers
 
