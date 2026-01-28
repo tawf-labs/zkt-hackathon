@@ -27,7 +27,8 @@ interface IProposalManager {
     
     enum CampaignType {
         Normal,
-        ZakatCompliant
+        ZakatCompliant,
+        Emergency
     }
 
     enum MilestoneStatus {
@@ -100,6 +101,74 @@ interface IProposalManager {
     event MilestoneProofSubmitted(uint256 indexed proposalId, uint256 indexed milestoneId, string ipfsCID);
     event MilestoneVotingStarted(uint256 indexed proposalId, uint256 indexed milestoneId, uint256 voteStart, uint256 voteEnd);
     event MilestoneStatusUpdated(uint256 indexed proposalId, uint256 indexed milestoneId, MilestoneStatus status);
+
+    // ============ ZK Proof Events ============
+
+    event ShariaProofSubmitted(
+        uint256 indexed bundleId,
+        uint256 indexed proposalId,
+        uint256 approvalCount,
+        address indexed submitter
+    );
+    event CouncilRootUpdated(uint256 newRoot);
+
+    // ============ Organizer Application Events ============
+
+    /// @notice Application status for organizer applicants
+    enum OrganizerApplicationStatus {
+        Pending,        // Application submitted, awaiting review
+        KYCReview,      // KYC oracle reviewing
+        CommunityVote,  // Community voting on application
+        Approved,       // Application approved
+        Rejected,       // Application rejected
+        Withdrawn       // Application withdrawn by applicant
+    }
+
+    /// @notice Organizer application data
+    struct OrganizerApplication {
+        uint256 applicationId;
+        address applicant;
+        string organizationName;
+        string description;
+        string metadataURI;
+        OrganizerApplicationStatus status;
+        KYCStatus kycStatus;
+        uint256 appliedAt;
+        uint256 voteStart;
+        uint256 voteEnd;
+        uint256 votesFor;
+        uint256 votesAgainst;
+        uint256 votesAbstain;
+        string notes;
+    }
+
+    event OrganizerApplicationSubmitted(
+        uint256 indexed applicationId,
+        address indexed applicant,
+        string organizationName,
+        string metadataURI
+    );
+    event OrganizerKYCUpdated(
+        uint256 indexed applicationId,
+        address indexed applicant,
+        KYCStatus status,
+        string notes
+    );
+    event OrganizerApplicationVoteStarted(
+        uint256 indexed applicationId,
+        uint256 voteStart,
+        uint256 voteEnd
+    );
+    event OrganizerApplicationFinalized(
+        uint256 indexed applicationId,
+        address indexed applicant,
+        bool approved
+    );
+    event OrganizerStatusUpdated(
+        address indexed organizer,
+        bool isActive,
+        string reason
+    );
     
     function createProposal(
         address organizer,

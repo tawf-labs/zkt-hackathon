@@ -3,7 +3,8 @@ pragma solidity ^0.8.31;
 import "forge-std/Script.sol";
 import "../src/tokens/MockIDRX.sol";
 import "../src/tokens/DonationReceiptNFT.sol";
-import "../src/tokens/VotingToken.sol";
+import "../src/tokens/VotingNFT.sol";
+import "../src/tokens/OrganizerNFT.sol";
 import "../src/DAO/ZKTCore.sol";
 import "../src/DAO/core/ProposalManager.sol";
 import "../src/DAO/core/VotingManager.sol";
@@ -11,6 +12,8 @@ import "../src/DAO/core/ShariaReviewManager.sol";
 import "../src/DAO/core/PoolManager.sol";
 import "../src/DAO/core/ZakatEscrowManager.sol";
 import "../src/DAO/core/MilestoneManager.sol";
+import "../src/DAO/core/ParticipationTracker.sol";
+import "../src/DAO/verifiers/Groth16Verifier.sol";
 
 /**
  * @title DeployZKTDAO
@@ -21,7 +24,10 @@ contract DeployZKT is Script {
     // Deployment addresses
     MockIDRX public idrxToken;
     DonationReceiptNFT public receiptNFT;
-    VotingToken public votingToken;
+    VotingNFT public votingNFT;
+    OrganizerNFT public organizerNFT;
+    ParticipationTracker public participationTracker;
+    Groth16Verifier public groth16Verifier;
 
     ProposalManager public proposalManager;
     VotingManager public votingManager;
@@ -47,8 +53,15 @@ contract DeployZKT is Script {
         console.log("\n1. Deploying tokens...");
         idrxToken = new MockIDRX();
         receiptNFT = new DonationReceiptNFT();
-        votingToken = new VotingToken();
+        votingNFT = new VotingNFT();
+        organizerNFT = new OrganizerNFT();
+        participationTracker = new ParticipationTracker();
         console.log("Tokens deployed.");
+
+        // 1.5. Deploy ZK Verifier
+        console.log("\n1.5. Deploying ZK verifier...");
+        groth16Verifier = new Groth16Verifier();
+        console.log("Groth16Verifier deployed at:", address(groth16Verifier));
 
         // 2. Deploy Managers (Dependency Order)
         console.log("\n2. Deploying core managers...");
@@ -58,11 +71,14 @@ contract DeployZKT is Script {
 
         votingManager = new VotingManager(
             address(proposalManager),
-            address(votingToken)
+            address(votingNFT)
         );
         console.log("VotingManager deployed at:", address(votingManager));
 
-        shariaReviewManager = new ShariaReviewManager(address(proposalManager));
+        shariaReviewManager = new ShariaReviewManager(
+            address(proposalManager),
+            address(groth16Verifier)
+        );
         console.log(
             "ShariaReviewManager deployed at:",
             address(shariaReviewManager)
@@ -87,7 +103,7 @@ contract DeployZKT is Script {
 
         milestoneManager = new MilestoneManager(
             address(proposalManager),
-            address(votingToken)
+            address(votingNFT)
         );
         console.log("MilestoneManager deployed at:", address(milestoneManager));
 
@@ -96,7 +112,9 @@ contract DeployZKT is Script {
         dao = new ZKTCore(
             address(idrxToken),
             address(receiptNFT),
-            address(votingToken),
+            address(votingNFT),
+            address(organizerNFT),
+            address(participationTracker),
             address(proposalManager),
             address(votingManager),
             address(shariaReviewManager),
@@ -181,7 +199,11 @@ contract DeployZKT is Script {
             receiptNFT.MINTER_ROLE(),
             address(zakatEscrowManager)
         );
-        votingToken.grantRole(votingToken.MINTER_ROLE(), address(dao));
+        votingNFT.grantRole(votingNFT.MINTER_ROLE(), address(dao));
+        votingNFT.grantRole(votingNFT.ADMIN_ROLE(), address(dao));
+        votingNFT.grantRole(votingNFT.UPGRADER_ROLE(), address(dao));
+        participationTracker.grantRole(participationTracker.TRACKER_ROLE(), address(dao));
+        participationTracker.grantRole(participationTracker.VERIFIER_ROLE(), address(dao));
 
         // 5. Initial setup
         console.log("\n5. Performing initial configuration...");
@@ -189,8 +211,9 @@ contract DeployZKT is Script {
         dao.grantShariaCouncilRole(deployer);
         dao.grantKYCOracleRole(deployer);
 
-        // Grant initial voting power
-        dao.grantVotingPower(deployer, 1000 * 10 ** 18);
+        // Grant initial voting NFT to deployer
+        dao.grantVotingNFT(deployer, "ipfs://deployer-voting-nft");
+        dao.verifyVoter(deployer);
 
         // Setup default fallback pool
         exampleFallbackPool = deployer;

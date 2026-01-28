@@ -1,0 +1,35 @@
+{
+  "name": "zkt-sharia-coordinator",
+  "version": "1.0.0",
+  "description": "Off-chain coordinator for Sharia council ZK proof generation",
+  "main": "src/index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js",
+    "test": "node src/test/test.js",
+    "generate-proof": "node src/scripts/generateProof.js",
+    "verify-proof": "node src/scripts/verifyProof.js",
+    "setup-council": "node src/scripts/setupCouncil.js"
+  },
+  "dependencies": {
+    "snarkjs": "^0.7.3",
+    "circomlibjs": "^0.1.7",
+    "ethers": "^6.9.0",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "cors": "^2.8.5",
+    "body-parser": "^1.20.2",
+    "level": "^8.0.0"
+  },
+  "devDependencies": {
+    "chai": "^4.3.10"
+  },
+  "keywords": [
+    "zk-snark",
+    "groth16",
+    "sharia",
+    "coordinator"
+  ],
+  "license": "MIT"
+}

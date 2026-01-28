@@ -3,16 +3,21 @@ pragma solidity ^0.8.31;
 import "forge-std/Test.sol";
 import "../src/tokens/MockIDRX.sol";
 import "../src/tokens/DonationReceiptNFT.sol";
-import "../src/tokens/VotingToken.sol";
+import "../src/tokens/VotingNFT.sol";
+import "../src/tokens/OrganizerNFT.sol";
 import "../src/DAO/ZKTCore.sol";
 import "../src/DAO/interfaces/IProposalManager.sol";
 import "../src/DAO/core/PoolManager.sol";
 import "../src/DAO/core/ZakatEscrowManager.sol";
+import "../src/DAO/core/ParticipationTracker.sol";
+import "../src/DAO/verifiers/Groth16Verifier.sol";
 
 contract ZKTCoreTest is Test {
     MockIDRX public idrxToken;
     DonationReceiptNFT public receiptNFT;
-    VotingToken public votingToken;
+    VotingNFT public votingNFT;
+    OrganizerNFT public organizerNFT;
+    ParticipationTracker public participationTracker;
     ZKTCore public dao;
 
     address public deployer = address(this);
@@ -30,16 +35,22 @@ contract ZKTCoreTest is Test {
         // Deploy tokens
         idrxToken = new MockIDRX();
         receiptNFT = new DonationReceiptNFT();
-        votingToken = new VotingToken();
+        votingNFT = new VotingNFT();
+        organizerNFT = new OrganizerNFT();
+        participationTracker = new ParticipationTracker();
+
+        // Deploy Groth16Verifier
+        Groth16Verifier groth16Verifier = new Groth16Verifier();
 
         // Deploy Managers
         ProposalManager proposalManager = new ProposalManager();
         VotingManager votingManager = new VotingManager(
             address(proposalManager),
-            address(votingToken)
+            address(votingNFT)
         );
         ShariaReviewManager shariaReviewManager = new ShariaReviewManager(
-            address(proposalManager)
+            address(proposalManager),
+            address(groth16Verifier)
         );
         PoolManager poolManager = new PoolManager(
             address(proposalManager),
@@ -53,14 +64,16 @@ contract ZKTCoreTest is Test {
         );
         MilestoneManager milestoneManager = new MilestoneManager(
             address(proposalManager),
-            address(votingToken)
+            address(votingNFT)
         );
 
         // Deploy ZKTCore Orchestrator
         dao = new ZKTCore(
             address(idrxToken),
             address(receiptNFT),
-            address(votingToken),
+            address(votingNFT),
+            address(organizerNFT),
+            address(participationTracker),
             address(proposalManager),
             address(votingManager),
             address(shariaReviewManager),
@@ -149,8 +162,14 @@ contract ZKTCoreTest is Test {
             address(zakatEscrowManager)
         );
 
-        // Grant MINTER_ROLE to DAO for VotingToken
-        votingToken.grantRole(votingToken.MINTER_ROLE(), address(dao));
+        // Grant MINTER_ROLE to DAO for VotingNFT
+        votingNFT.grantRole(votingNFT.MINTER_ROLE(), address(dao));
+        votingNFT.grantRole(votingNFT.ADMIN_ROLE(), address(dao));
+        votingNFT.grantRole(votingNFT.UPGRADER_ROLE(), address(dao));
+
+        // Grant roles to ParticipationTracker
+        participationTracker.grantRole(participationTracker.TRACKER_ROLE(), address(dao));
+        participationTracker.grantRole(participationTracker.VERIFIER_ROLE(), address(dao));
 
         // Setup roles (no ADMIN_ROLE - fully decentralized)
         dao.grantOrganizerRole(organizer);
@@ -159,10 +178,15 @@ contract ZKTCoreTest is Test {
         dao.grantShariaCouncilRole(shariaCouncil3);
         dao.grantKYCOracleRole(deployer); // Grant deployer KYC oracle role for tests
 
-        // Grant voting power (1 token = 1 vote)
-        dao.grantVotingPower(member1, 100 * 10 ** 18);
-        dao.grantVotingPower(member2, 100 * 10 ** 18);
-        dao.grantVotingPower(member3, 100 * 10 ** 18);
+        // Grant voting NFTs to members (each gets 1 NFT with tier-based voting power)
+        dao.grantVotingNFT(member1, "ipfs://member1");
+        dao.grantVotingNFT(member2, "ipfs://member2");
+        dao.grantVotingNFT(member3, "ipfs://member3");
+
+        // Verify members so they can vote
+        dao.verifyVoter(member1);
+        dao.verifyVoter(member2);
+        dao.verifyVoter(member3);
 
         // Give IDRX to donors
         idrxToken.adminMint(donor1, 10000 * 10 ** 18);
@@ -325,9 +349,9 @@ contract ZKTCoreTest is Test {
             uint8(proposal.status),
             uint8(IProposalManager.ProposalStatus.ShariaReview)
         );
-        // Each member has 100 * 10^18 voting tokens, so votes are weighted
-        assertEq(proposal.votesFor, 200 * 10 ** 18); // member1 + member2
-        assertEq(proposal.votesAgainst, 100 * 10 ** 18); // member3
+        // Each member has 1 vote at Tier 1, so votes are weighted
+        assertEq(proposal.votesFor, 2); // member1 + member2
+        assertEq(proposal.votesAgainst, 1); // member3
     }
 
     function testShariaReviewFlow() public {
@@ -949,8 +973,8 @@ contract ZKTCoreTest is Test {
             uint8(m.status),
             uint8(IProposalManager.MilestoneStatus.Approved)
         );
-        assertEq(m.votesFor, 200 * 10 ** 18);
-        assertEq(m.votesAgainst, 100 * 10 ** 18);
+        assertEq(m.votesFor, 2); // member1 + member2 (1 vote each at Tier 1)
+        assertEq(m.votesAgainst, 1); // member3
     }
 
     function testMilestoneFundRelease() public {

@@ -1,0 +1,38 @@
+{
+  "name": "sharia-zk-coordinator",
+  "version": "1.0.0",
+  "description": "ZK Sharia Council Proof Coordinator running in TEE",
+  "tee": true,
+  "runtime": "nodejs",
+  "entrypoint": "src/index.js",
+  "env": {
+    "NODE_ENV": "production",
+    "PORT": "3000"
+  },
+  "resources": {
+    "memory": "512Mi",
+    "cpu": "0.5",
+    "disk": "1Gi"
+  },
+  "scaling": {
+    "min": 1,
+    "max": 3,
+    "target": "80"
+  },
+  "health": {
+    "path": "/health",
+    "interval": 30,
+    "timeout": 5,
+    "retries": 3
+  },
+  "secrets": [
+    "PRIVATE_KEY",
+    "SUPABASE_URL",
+    "SUPABASE_ANON_KEY"
+  ],
+  "ports": [{
+    "port": 3000,
+    "protocol": "http",
+    "public": true
+  }]
+}

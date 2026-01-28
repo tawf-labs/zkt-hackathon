@@ -3,18 +3,19 @@ pragma solidity ^0.8.31;
 import "@openzeppelin/contracts/access/AccessControl.sol";
 import "../interfaces/IProposalManager.sol";
 import "./ProposalManager.sol";
-import "../../tokens/VotingToken.sol";
+import "../../tokens/VotingNFT.sol";
 
 /**
  * @title VotingManager
- * @notice Handles community voting using non-transferable voting tokens
- * @dev Voters must hold vZKT tokens to participate
+ * @notice Handles community voting using tiered voting NFTs
+ * @dev Voters must hold vZKT NFT to participate
+ *      Voting weight based on tier: Tier 1 = 1 vote, Tier 2 = 2 votes, Tier 3 = 3 votes
  */
 contract VotingManager is AccessControl {
     bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
-    
+
     ProposalManager public proposalManager;
-    VotingToken public votingToken;
+    VotingNFT public votingNFT;
     
     uint256 public quorumPercentage = 10;
     uint256 public passThreshold = 51;
@@ -27,11 +28,11 @@ contract VotingManager is AccessControl {
     event VoteCast(uint256 indexed proposalId, address indexed voter, uint8 support, uint256 weight);
     event VotingPeriodEnded(uint256 indexed proposalId, bool passed, uint256 forVotes, uint256 againstVotes);
     
-    constructor(address _proposalManager, address _votingToken) {
+    constructor(address _proposalManager, address _votingNFT) {
         require(_proposalManager != address(0), "Invalid proposal manager");
-        require(_votingToken != address(0), "Invalid voting token");
+        require(_votingNFT != address(0), "Invalid voting NFT");
         proposalManager = ProposalManager(_proposalManager);
-        votingToken = VotingToken(_votingToken);
+        votingNFT = VotingNFT(_votingNFT);
         
         _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
         _grantRole(ADMIN_ROLE, msg.sender);
@@ -40,7 +41,7 @@ contract VotingManager is AccessControl {
     function castVote(address voter, uint256 proposalId, uint8 support) external {
         require(voter != address(0), "Invalid voter address");
         IProposalManager.Proposal memory proposal = proposalManager.getProposal(proposalId);
-        
+
         require(proposal.status == IProposalManager.ProposalStatus.CommunityVote, "Voting not active");
         require(
             block.timestamp >= proposal.communityVoteStart &&
@@ -49,9 +50,10 @@ contract VotingManager is AccessControl {
         );
         require(!hasVoted[proposalId][voter], "Already voted");
         require(support <= 2, "Invalid vote option");
-        
-        uint256 votingPower = votingToken.balanceOf(voter);
-        require(votingPower > 0, "No voting power (need vZKT tokens)");
+
+        // Get tier-based voting power from VotingNFT
+        uint256 votingPower = votingNFT.getVotingPower(voter);
+        require(votingPower > 0, "No voting power (need vZKT NFT)");
         
         hasVoted[proposalId][voter] = true;
         
@@ -68,12 +70,12 @@ contract VotingManager is AccessControl {
     
     function finalizeCommunityVote(uint256 proposalId) external returns (bool) {
         IProposalManager.Proposal memory proposal = proposalManager.getProposal(proposalId);
-        
+
         require(proposal.status == IProposalManager.ProposalStatus.CommunityVote, "Not in voting");
         require(block.timestamp > proposal.communityVoteEnd, "Voting still active");
-        
+
         uint256 totalVotes = votesFor[proposalId] + votesAgainst[proposalId] + votesAbstain[proposalId];
-        uint256 totalSupply = votingToken.totalSupply();
+        uint256 totalSupply = votingNFT.totalSupply();
         uint256 quorumRequired = (totalSupply * quorumPercentage) / 100;
         
         bool quorumReached = totalVotes >= quorumRequired;

@@ -7,17 +7,22 @@ import "./core/ShariaReviewManager.sol";
 import "./core/PoolManager.sol";
 import "./core/ZakatEscrowManager.sol";
 import "./core/MilestoneManager.sol";
+import "./core/ParticipationTracker.sol";
+import "./verifiers/Groth16Verifier.sol";
 import "../tokens/MockIDRX.sol";
 import "../tokens/DonationReceiptNFT.sol";
-import "../tokens/VotingToken.sol";
+import "../tokens/VotingNFT.sol";
+import "../tokens/OrganizerNFT.sol";
 
 /**
  * @title ZKTCore
  * @notice Orchestrator contract for the modular ZKT DAO system
- * @dev Deploys and coordinates: ProposalManager, VotingManager, ShariaReviewManager, PoolManager, ZakatEscrowManager
- * Uses VotingToken (non-transferable ERC20) for community voting power
+ * @dev Deploys and coordinates: ProposalManager, VotingManager, ShariaReviewManager, PoolManager, ZakatEscrowManager, MilestoneManager
+ * Uses VotingNFT (non-transferable ERC721) for tiered community voting power
+ * Uses OrganizerNFT (non-transferable ERC721) for KYC'd organizer status
  * Routes ZakatCompliant campaigns to ZakatEscrowManager (with 30-day timeout)
  * Routes Normal campaigns to PoolManager (no timeout restrictions)
+ * Routes Emergency campaigns to ZakatEscrowManager with expedited flow
  */
 contract ZKTCore is AccessControl {
     bytes32 public constant ORGANIZER_ROLE = keccak256("ORGANIZER_ROLE");
@@ -30,15 +35,19 @@ contract ZKTCore is AccessControl {
     PoolManager public poolManager;
     ZakatEscrowManager public zakatEscrowManager;
     MilestoneManager public milestoneManager;
+    ParticipationTracker public participationTracker;
 
     MockIDRX public idrxToken;
     DonationReceiptNFT public receiptNFT;
-    VotingToken public votingToken;
+    VotingNFT public votingNFT;
+    OrganizerNFT public organizerNFT;
     
     constructor(
         address _idrxToken,
         address _receiptNFT,
-        address _votingToken,
+        address _votingNFT,
+        address _organizerNFT,
+        address _participationTracker,
         address _proposalManager,
         address _votingManager,
         address _shariaReviewManager,
@@ -48,7 +57,9 @@ contract ZKTCore is AccessControl {
     ) {
         require(_idrxToken != address(0), "Invalid IDRX token");
         require(_receiptNFT != address(0), "Invalid receipt NFT");
-        require(_votingToken != address(0), "Invalid Voting token");
+        require(_votingNFT != address(0), "Invalid Voting NFT");
+        require(_organizerNFT != address(0), "Invalid Organizer NFT");
+        require(_participationTracker != address(0), "Invalid ParticipationTracker");
         require(_proposalManager != address(0), "Invalid ProposalManager");
         require(_votingManager != address(0), "Invalid VotingManager");
         require(_shariaReviewManager != address(0), "Invalid ShariaReviewManager");
@@ -58,7 +69,9 @@ contract ZKTCore is AccessControl {
 
         idrxToken = MockIDRX(_idrxToken);
         receiptNFT = DonationReceiptNFT(_receiptNFT);
-        votingToken = VotingToken(_votingToken);
+        votingNFT = VotingNFT(_votingNFT);
+        organizerNFT = OrganizerNFT(_organizerNFT);
+        participationTracker = ParticipationTracker(_participationTracker);
 
         proposalManager = ProposalManager(_proposalManager);
         votingManager = VotingManager(_votingManager);
@@ -72,18 +85,19 @@ contract ZKTCore is AccessControl {
     }
     
     // ============ Role Management Helpers ============
-    
+
     function grantOrganizerRole(address account) external onlyRole(DEFAULT_ADMIN_ROLE) {
         _grantRole(ORGANIZER_ROLE, account);
     }
-    
-    function grantVotingPower(address account, uint256 amount) external {
-        // Permissionless - anyone can request voting tokens (in production, add faucet-style rate limits)
-        votingToken.mint(account, amount, "Voting power granted");
+
+    function grantVotingNFT(address account, string memory metadataURI) external {
+        // Permissionless - anyone can request a voting NFT (in production, add faucet-style rate limits)
+        votingNFT.mintVotingNFT(account, metadataURI);
     }
-    
-    function revokeVotingPower(address account, uint256 amount) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        votingToken.burn(account, amount, "Admin revoked voting power");
+
+    function verifyVoter(address voter) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        votingNFT.verifyVoter(voter);
+        participationTracker.setVerification(voter, true);
     }
     
     function grantShariaCouncilRole(address account) external onlyRole(DEFAULT_ADMIN_ROLE) {
@@ -92,6 +106,185 @@ contract ZKTCore is AccessControl {
     
     function grantKYCOracleRole(address account) external onlyRole(DEFAULT_ADMIN_ROLE) {
         _grantRole(KYC_ORACLE_ROLE, account);
+    }
+
+    // ============ Organizer Application Flow ============
+
+    /// @notice Organizer application counter
+    uint256 public organizerApplicationCount;
+
+    /// @notice Organizer application storage
+    mapping(uint256 => IProposalManager.OrganizerApplication) public organizerApplications;
+
+    /// @notice Mapping from applicant to their application ID
+    mapping(address => uint256) public applicantToApplicationId;
+
+    event OrganizerApplicationSubmitted(
+        uint256 indexed applicationId,
+        address indexed applicant,
+        string organizationName,
+        string description
+    );
+    event OrganizerApplicationKYCUpdated(
+        uint256 indexed applicationId,
+        address indexed applicant,
+        IProposalManager.KYCStatus status,
+        string notes
+    );
+    event OrganizerApplicationVoteStarted(
+        uint256 indexed applicationId,
+        uint256 voteStart,
+        uint256 voteEnd
+    );
+    event OrganizerApplicationFinalized(
+        uint256 indexed applicationId,
+        address indexed applicant,
+        bool approved
+    );
+
+    /**
+     * @notice Submit an application to become an organizer
+     * @param organizationName Name of the organization
+     * @param description Description of the organization
+     * @param metadataURI IPFS URI with full org details, documents
+     * @return applicationId The application ID
+     */
+    function proposeOrganizer(
+        string memory organizationName,
+        string memory description,
+        string memory metadataURI
+    )
+        external
+        returns (uint256)
+    {
+        require(bytes(organizationName).length > 0, "Organization name required");
+        require(applicantToApplicationId[msg.sender] == 0, "Already have an application");
+
+        organizerApplicationCount++;
+        uint256 applicationId = organizerApplicationCount;
+
+        organizerApplications[applicationId] = IProposalManager.OrganizerApplication({
+            applicationId: applicationId,
+            applicant: msg.sender,
+            organizationName: organizationName,
+            description: description,
+            metadataURI: metadataURI,
+            status: IProposalManager.OrganizerApplicationStatus.Pending,
+            kycStatus: IProposalManager.KYCStatus.Pending,
+            appliedAt: block.timestamp,
+            voteStart: 0,
+            voteEnd: 0,
+            votesFor: 0,
+            votesAgainst: 0,
+            votesAbstain: 0,
+            notes: "Application submitted"
+        });
+
+        applicantToApplicationId[msg.sender] = applicationId;
+
+        emit OrganizerApplicationSubmitted(applicationId, msg.sender, organizationName, description);
+
+        return applicationId;
+    }
+
+    /**
+     * @notice Update KYC status for organizer application (KYC Oracle only)
+     * @param applicationId Application ID
+     * @param newStatus New KYC status
+     * @param notes Notes about the status change
+     */
+    function updateOrganizerKYC(
+        uint256 applicationId,
+        IProposalManager.KYCStatus newStatus,
+        string memory notes
+    )
+        external
+        onlyRole(KYC_ORACLE_ROLE)
+    {
+        require(applicationId > 0 && applicationId <= organizerApplicationCount, "Invalid application ID");
+
+        IProposalManager.OrganizerApplication storage application = organizerApplications[applicationId];
+        application.kycStatus = newStatus;
+        application.notes = notes;
+
+        emit OrganizerApplicationKYCUpdated(applicationId, application.applicant, newStatus, notes);
+    }
+
+    /**
+     * @notice Start community voting for organizer application
+     * @param applicationId Application ID
+     */
+    function submitOrganizerApplicationForVote(uint256 applicationId) external {
+        require(applicationId > 0 && applicationId <= organizerApplicationCount, "Invalid application ID");
+
+        IProposalManager.OrganizerApplication storage application = organizerApplications[applicationId];
+        require(application.applicant == msg.sender || hasRole(DEFAULT_ADMIN_ROLE, msg.sender), "Not authorized");
+        require(application.status == IProposalManager.OrganizerApplicationStatus.Pending, "Invalid status");
+        require(application.kycStatus == IProposalManager.KYCStatus.Verified, "KYC must be verified");
+
+        uint256 votingPeriod = proposalManager.votingPeriod();
+        application.voteStart = block.timestamp;
+        application.voteEnd = block.timestamp + votingPeriod;
+        application.status = IProposalManager.OrganizerApplicationStatus.CommunityVote;
+
+        emit OrganizerApplicationVoteStarted(applicationId, application.voteStart, application.voteEnd);
+    }
+
+    /**
+     * @notice Finalize organizer application (after community vote passes)
+     * @param applicationId Application ID
+     * @param approved Whether the application was approved
+     */
+    function finalizeOrganizerApplication(uint256 applicationId, bool approved)
+        external
+        onlyRole(DEFAULT_ADMIN_ROLE)
+    {
+        require(applicationId > 0 && applicationId <= organizerApplicationCount, "Invalid application ID");
+
+        IProposalManager.OrganizerApplication storage application = organizerApplications[applicationId];
+        require(application.status == IProposalManager.OrganizerApplicationStatus.CommunityVote, "Not in voting");
+        require(block.timestamp > application.voteEnd, "Voting still active");
+
+        application.status = approved
+            ? IProposalManager.OrganizerApplicationStatus.Approved
+            : IProposalManager.OrganizerApplicationStatus.Rejected;
+
+        if (approved) {
+            // Mint Organizer NFT and grant organizer role
+            organizerNFT.mintOrganizerNFT(
+                application.applicant,
+                application.organizationName,
+                application.description,
+                application.metadataURI
+            );
+            organizerNFT.updateOrganizerKYC(application.applicant, OrganizerNFT.OrganizerKYCStatus.Verified, "Approved via application");
+            _grantRole(ORGANIZER_ROLE, application.applicant);
+        }
+
+        emit OrganizerApplicationFinalized(applicationId, application.applicant, approved);
+    }
+
+    /**
+     * @notice Get organizer application details
+     * @param applicationId Application ID
+     * @return application The organizer application data
+     */
+    function getOrganizerApplication(uint256 applicationId)
+        external
+        view
+        returns (IProposalManager.OrganizerApplication memory)
+    {
+        require(applicationId > 0 && applicationId <= organizerApplicationCount, "Invalid application ID");
+        return organizerApplications[applicationId];
+    }
+
+    /**
+     * @notice Get application ID for an applicant
+     * @param applicant Applicant address
+     * @return applicationId The application ID or 0 if none
+     */
+    function getApplicantApplicationId(address applicant) external view returns (uint256) {
+        return applicantToApplicationId[applicant];
     }
     
     // ============ Re-export Core Functions for Ease of Use ============
@@ -170,7 +363,103 @@ contract ZKTCore is AccessControl {
     function finalizeShariaBundle(uint256 bundleId) external onlyRole(SHARIA_COUNCIL_ROLE) {
         shariaReviewManager.finalizeShariaBundle(bundleId);
     }
-    
+
+    // ============ ZK Proof Functions ============
+
+    /**
+     * @notice Submit a ZK proof for Sharia council approval (permissionless)
+     * @param bundleId Bundle being reviewed
+     * @param proposalId Proposal being reviewed
+     * @param approvalCount Number of approve votes
+     * @param campaignType Type of campaign
+     * @param proof Groth16 proof structure
+     * @return success True if proof was verified and accepted
+     */
+    function submitShariaReviewProof(
+        uint256 bundleId,
+        uint256 proposalId,
+        uint256 approvalCount,
+        IProposalManager.CampaignType campaignType,
+        Groth16Proof calldata proof
+    ) external returns (bool success) {
+        return shariaReviewManager.submitShariaReviewProof(
+            bundleId,
+            proposalId,
+            approvalCount,
+            campaignType,
+            proof
+        );
+    }
+
+    /**
+     * @notice Batch submit ZK proofs for multiple proposals
+     * @param bundleId Bundle being reviewed
+     * @param proposalIds Array of proposal IDs
+     * @param approvalCounts Array of approval counts
+     * @param campaignTypes Array of campaign types
+     * @param proofs Array of Groth16 proofs
+     * @return successCount Number of successfully verified proofs
+     */
+    function batchSubmitShariaReviewProofs(
+        uint256 bundleId,
+        uint256[] calldata proposalIds,
+        uint256[] calldata approvalCounts,
+        IProposalManager.CampaignType[] calldata campaignTypes,
+        Groth16Proof[] calldata proofs
+    ) external returns (uint256 successCount) {
+        return shariaReviewManager.batchSubmitShariaReviewProofs(
+            bundleId,
+            proposalIds,
+            approvalCounts,
+            campaignTypes,
+            proofs
+        );
+    }
+
+    /**
+     * @notice Set the council Merkle root (admin only)
+     * @param newRoot New Merkle root of council membership
+     */
+    function setCouncilMerkleRoot(uint256 newRoot) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        shariaReviewManager.setCouncilMerkleRoot(newRoot);
+    }
+
+    /**
+     * @notice Set the nullifier Merkle root (admin only)
+     * @param newRoot New Merkle root of nullifiers
+     */
+    function setNullifierMerkleRoot(uint256 newRoot) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        shariaReviewManager.setNullifierMerkleRoot(newRoot);
+    }
+
+    /**
+     * @notice Check if a proposal has a verified ZK proof
+     * @param bundleId Bundle ID
+     * @param proposalId Proposal ID
+     * @return verified True if proof has been verified
+     */
+    function hasVerifiedProof(uint256 bundleId, uint256 proposalId)
+        external
+        view
+        returns (bool verified)
+    {
+        return shariaReviewManager.hasVerifiedProof(bundleId, proposalId);
+    }
+
+    /**
+     * @notice Get the approval count from a verified ZK proof
+     * @param bundleId Bundle ID
+     * @param proposalId Proposal ID
+     * @return count Approval count from ZK proof
+     */
+    function getProofApprovalCount(uint256 bundleId, uint256 proposalId)
+        external
+        view
+        returns (uint256 count)
+    {
+        return shariaReviewManager.getProofApprovalCount(bundleId, proposalId);
+    }
+
     // Pool functions
 
     /**
@@ -541,6 +830,103 @@ contract ZKTCore is AccessControl {
      */
     function getMilestoneManagerAddress() external view returns (address) {
         return address(milestoneManager);
+    }
+
+    // ============ NFT View Functions ============
+
+    /**
+     * @notice Get VotingNFT contract address
+     */
+    function getVotingNFTAddress() external view returns (address) {
+        return address(votingNFT);
+    }
+
+    /**
+     * @notice Get OrganizerNFT contract address
+     */
+    function getOrganizerNFTAddress() external view returns (address) {
+        return address(organizerNFT);
+    }
+
+    /**
+     * @notice Get ParticipationTracker contract address
+     */
+    function getParticipationTrackerAddress() external view returns (address) {
+        return address(participationTracker);
+    }
+
+    /**
+     * @notice Get voting power for an address
+     * @param voter Address to check
+     * @return Voting power (1, 2, or 3 based on tier)
+     */
+    function getVotingPower(address voter) external view returns (uint256) {
+        return votingNFT.getVotingPower(voter);
+    }
+
+    /**
+     * @notice Get voting tier for an address
+     * @param voter Address to check
+     * @return Current voting tier
+     */
+    function getVotingTier(address voter) external view returns (VotingNFT.VotingTier) {
+        return votingNFT.getTier(voter);
+    }
+
+    /**
+     * @notice Check if address has a Voting NFT
+     * @param voter Address to check
+     * @return True if voter has a Voting NFT
+     */
+    function hasVotingNFT(address voter) external view returns (bool) {
+        return votingNFT.hasVotingNFT(voter);
+    }
+
+    /**
+     * @notice Check if address is a verified organizer
+     * @param organizer Address to check
+     * @return True if organizer is verified and active
+     */
+    function isVerifiedOrganizer(address organizer) external view returns (bool) {
+        return organizerNFT.isVerifiedOrganizer(organizer);
+    }
+
+    /**
+     * @notice Get organizer data
+     * @param organizer Address to check
+     * @return data Full organizer NFT data
+     */
+    function getOrganizerData(address organizer) external view returns (OrganizerNFT.OrganizerNFTData memory) {
+        return organizerNFT.getOrganizerData(organizer);
+    }
+
+    /**
+     * @notice Get participation metrics for an address
+     * @param user Address to check
+     * @return metrics Full participation metrics
+     */
+    function getParticipationMetrics(address user) external view returns (ParticipationTracker.ParticipationMetrics memory) {
+        return participationTracker.getMetrics(user);
+    }
+
+    /**
+     * @notice Get tier eligibility for an address
+     * @param user Address to check
+     * @return tier1 Eligible for Tier 1
+     * @return tier2 Eligible for Tier 2
+     * @return tier3 Eligible for Tier 3
+     */
+    function getTierEligibility(address user) external view returns (bool tier1, bool tier2, bool tier3) {
+        return participationTracker.getTierEligibility(user);
+    }
+
+    /**
+     * @notice Auto-upgrade voting tier based on participation
+     * @param voter Address to upgrade
+     * @return upgraded True if tier was upgraded
+     */
+    function autoUpgradeVotingTier(address voter) external returns (bool) {
+        return votingNFT.autoUpgradeTier(voter);
     }
 }
 

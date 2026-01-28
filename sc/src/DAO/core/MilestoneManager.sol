@@ -4,19 +4,20 @@ import "@openzeppelin/contracts/access/AccessControl.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "../interfaces/IProposalManager.sol";
 import "./ProposalManager.sol";
-import "../../tokens/VotingToken.sol";
+import "../../tokens/VotingNFT.sol";
 
 /**
  * @title MilestoneManager
  * @notice Manages milestone completion proof submission, voting, and approval
  * @dev Reuses voting mechanism similar to VotingManager for milestone approvals
+ *      Voting weight based on tier: Tier 1 = 1 vote, Tier 2 = 2 votes, Tier 3 = 3 votes
  */
 contract MilestoneManager is AccessControl, ReentrancyGuard {
     bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
     bytes32 public constant ORGANIZER_ROLE = keccak256("ORGANIZER_ROLE");
 
     ProposalManager public proposalManager;
-    VotingToken public votingToken;
+    VotingNFT public votingNFT;
 
     uint256 public votingPeriod = 7 days;
     uint256 public quorumPercentage = 10; // 10% of total vZKT supply
@@ -53,12 +54,12 @@ contract MilestoneManager is AccessControl, ReentrancyGuard {
         uint256 votesAbstain
     );
 
-    constructor(address _proposalManager, address _votingToken) {
+    constructor(address _proposalManager, address _votingNFT) {
         require(_proposalManager != address(0), "Invalid proposal manager");
-        require(_votingToken != address(0), "Invalid voting token");
+        require(_votingNFT != address(0), "Invalid voting NFT");
 
         proposalManager = ProposalManager(_proposalManager);
-        votingToken = VotingToken(_votingToken);
+        votingNFT = VotingNFT(_votingNFT);
 
         _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
         _grantRole(ADMIN_ROLE, msg.sender);
@@ -162,7 +163,8 @@ contract MilestoneManager is AccessControl, ReentrancyGuard {
         require(block.timestamp <= milestone.voteEnd, "Voting period ended");
         require(!hasVoted[proposalId][milestoneId][voter], "Already voted");
 
-        uint256 voteWeight = votingToken.balanceOf(voter);
+        // Get tier-based voting power from VotingNFT
+        uint256 voteWeight = votingNFT.getVotingPower(voter);
         require(voteWeight > 0, "No voting power");
 
         hasVoted[proposalId][milestoneId][voter] = true;
@@ -204,7 +206,7 @@ contract MilestoneManager is AccessControl, ReentrancyGuard {
         require(milestone.status == IProposalManager.MilestoneStatus.Voting, "Not in voting period");
         require(block.timestamp > milestone.voteEnd, "Voting period not ended");
 
-        uint256 totalSupply = votingToken.totalSupply();
+        uint256 totalSupply = votingNFT.totalSupply();
         uint256 totalVotes = milestone.votesFor + milestone.votesAgainst + milestone.votesAbstain;
         uint256 validVotes = milestone.votesFor + milestone.votesAgainst; // Exclude abstain
 

@@ -1,0 +1,38 @@
+# Supabase Configuration
+# Copy this to supabase/config.toml and update values
+
+project_id = "your-project-id"
+
+[api]
+enabled = true
+port = 54321
+schemas = ["public", "graphql_public"]
+extra_search_path = ["public"]
+max_rows = 1000
+
+[db]
+port = 54322
+shadow_port = 54320
+
+[studio]
+enabled = true
+port = 54323
+api_url = "http://localhost:54321"
+
+[ingest]
+enabled = false
+
+[storage]
+enabled = true
+file_size_limit = "100MiB"
+
+[auth]
+enabled = true
+site_url = "http://localhost:3000"
+additional_redirect_urls = ["https://localhost:3000"]
+jwt_expiry = 3600
+
+[edge_functions]
+enabled = true
+port = 54324
+verify_jwt = false

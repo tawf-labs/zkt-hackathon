@@ -1,0 +1,12 @@
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Build
+functions/**/deno.lock
+functions/**/node_modules
+
+# Supabase
+.branches
+.temp
