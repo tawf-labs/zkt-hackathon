@@ -6,6 +6,7 @@ import "./core/VotingManager.sol";
 import "./core/ShariaReviewManager.sol";
 import "./core/PoolManager.sol";
 import "./core/ZakatEscrowManager.sol";
+import "./core/MilestoneManager.sol";
 import "../tokens/MockIDRX.sol";
 import "../tokens/DonationReceiptNFT.sol";
 import "../tokens/VotingToken.sol";
@@ -28,41 +29,44 @@ contract ZKTCore is AccessControl {
     ShariaReviewManager public shariaReviewManager;
     PoolManager public poolManager;
     ZakatEscrowManager public zakatEscrowManager;
-    
+    MilestoneManager public milestoneManager;
+
     MockIDRX public idrxToken;
     DonationReceiptNFT public receiptNFT;
     VotingToken public votingToken;
     
-    constructor(address _idrxToken, address _receiptNFT, address _votingToken) {
+    constructor(
+        address _idrxToken,
+        address _receiptNFT,
+        address _votingToken,
+        address _proposalManager,
+        address _votingManager,
+        address _shariaReviewManager,
+        address _poolManager,
+        address _zakatEscrowManager,
+        address _milestoneManager
+    ) {
         require(_idrxToken != address(0), "Invalid IDRX token");
         require(_receiptNFT != address(0), "Invalid receipt NFT");
         require(_votingToken != address(0), "Invalid Voting token");
-        
+        require(_proposalManager != address(0), "Invalid ProposalManager");
+        require(_votingManager != address(0), "Invalid VotingManager");
+        require(_shariaReviewManager != address(0), "Invalid ShariaReviewManager");
+        require(_poolManager != address(0), "Invalid PoolManager");
+        require(_zakatEscrowManager != address(0), "Invalid ZakatEscrowManager");
+        require(_milestoneManager != address(0), "Invalid MilestoneManager");
+
         idrxToken = MockIDRX(_idrxToken);
         receiptNFT = DonationReceiptNFT(_receiptNFT);
         votingToken = VotingToken(_votingToken);
-        
-        // Deploy core modules (they will grant DEFAULT_ADMIN_ROLE to msg.sender, which is this contract)
-        proposalManager = new ProposalManager();
-        votingManager = new VotingManager(address(proposalManager), _votingToken);
-        shariaReviewManager = new ShariaReviewManager(address(proposalManager));
-        poolManager = new PoolManager(address(proposalManager), _idrxToken, _receiptNFT);
-        zakatEscrowManager = new ZakatEscrowManager(address(proposalManager), _idrxToken, _receiptNFT);
 
-        // Grant CommunityDAO all functional roles so it can delegate calls
-        proposalManager.grantRole(proposalManager.ORGANIZER_ROLE(), address(this));
-        proposalManager.grantRole(proposalManager.KYC_ORACLE_ROLE(), address(this));
-        shariaReviewManager.grantRole(shariaReviewManager.SHARIA_COUNCIL_ROLE(), address(this));
-        poolManager.grantRole(poolManager.ADMIN_ROLE(), address(this));
-        zakatEscrowManager.grantRole(zakatEscrowManager.ADMIN_ROLE(), address(this));
-        zakatEscrowManager.grantRole(zakatEscrowManager.SHARIA_COUNCIL_ROLE(), address(this));
-        
-        // Grant cross-module permissions
-        proposalManager.grantRole(proposalManager.VOTING_MANAGER_ROLE(), address(votingManager));
-        proposalManager.grantRole(proposalManager.VOTING_MANAGER_ROLE(), address(shariaReviewManager));
-        proposalManager.grantRole(proposalManager.VOTING_MANAGER_ROLE(), address(poolManager));
-        proposalManager.grantRole(proposalManager.VOTING_MANAGER_ROLE(), address(zakatEscrowManager));
-        
+        proposalManager = ProposalManager(_proposalManager);
+        votingManager = VotingManager(_votingManager);
+        shariaReviewManager = ShariaReviewManager(_shariaReviewManager);
+        poolManager = PoolManager(_poolManager);
+        zakatEscrowManager = ZakatEscrowManager(_zakatEscrowManager);
+        milestoneManager = MilestoneManager(_milestoneManager);
+
         // Setup deployer as DEFAULT_ADMIN_ROLE to grant initial roles
         _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
     }
@@ -100,17 +104,19 @@ contract ZKTCore is AccessControl {
         bool isEmergency,
         bytes32 mockZKKYCProof,
         string[] memory zakatChecklistItems,
-        string memory metadataURI
+        string memory metadataURI,
+        IProposalManager.MilestoneInput[] memory milestoneInputs
     ) external onlyRole(ORGANIZER_ROLE) returns (uint256) {
         return proposalManager.createProposal(
-            msg.sender,  // Pass actual caller as organizer
+            msg.sender, // Pass actual caller as organizer
             title,
             description,
             fundingGoal,
             isEmergency,
             mockZKKYCProof,
             zakatChecklistItems,
-            metadataURI
+            metadataURI,
+            milestoneInputs
         );
     }
     
@@ -246,6 +252,58 @@ contract ZKTCore is AccessControl {
             // Fallback to PoolManager
             poolManager.withdrawFunds(msg.sender, poolId);
         }
+    }
+
+    // ============ Milestone Functions ============
+
+    /**
+     * @notice Submit proof document for milestone completion
+     * @param proposalId Proposal ID containing the milestone
+     * @param milestoneId Index of the milestone
+     * @param ipfsCID IPFS CID of the proof document
+     */
+    function submitMilestoneProof(uint256 proposalId, uint256 milestoneId, string memory ipfsCID)
+        external
+        onlyRole(ORGANIZER_ROLE)
+    {
+        milestoneManager.submitMilestoneProof(msg.sender, proposalId, milestoneId, ipfsCID);
+    }
+
+    /**
+     * @notice Start voting period for milestone approval
+     * @param proposalId Proposal ID containing the milestone
+     * @param milestoneId Index of the milestone
+     */
+    function startMilestoneVoting(uint256 proposalId, uint256 milestoneId) external {
+        milestoneManager.startMilestoneVoting(proposalId, milestoneId);
+    }
+
+    /**
+     * @notice Cast vote on milestone completion
+     * @param proposalId Proposal ID containing the milestone
+     * @param milestoneId Index of the milestone
+     * @param support Vote type: 0 = Against, 1 = For, 2 = Abstain
+     */
+    function voteMilestone(uint256 proposalId, uint256 milestoneId, uint8 support) external {
+        milestoneManager.voteMilestone(msg.sender, proposalId, milestoneId, support);
+    }
+
+    /**
+     * @notice Finalize milestone vote and determine approval
+     * @param proposalId Proposal ID containing the milestone
+     * @param milestoneId Index of the milestone
+     */
+    function finalizeMilestoneVote(uint256 proposalId, uint256 milestoneId) external {
+        milestoneManager.finalizeMilestoneVote(proposalId, milestoneId);
+    }
+
+    /**
+     * @notice Withdraw funds for an approved milestone
+     * @param poolId Campaign pool ID
+     * @param milestoneId Milestone index to withdraw funds for
+     */
+    function withdrawMilestoneFunds(uint256 poolId, uint256 milestoneId) external {
+        poolManager.withdrawMilestoneFunds(msg.sender, poolId, milestoneId);
     }
 
     // ============ Zakat-Specific Functions ============
@@ -424,4 +482,65 @@ contract ZKTCore is AccessControl {
     function getAllFallbackPools() external view returns (address[] memory) {
         return zakatEscrowManager.getAllFallbackPools();
     }
+
+    // ============ Milestone View Functions ============
+
+    /**
+     * @notice Get milestone details
+     * @param proposalId Proposal ID
+     * @param milestoneId Milestone index
+     * @return milestone Milestone struct
+     */
+    function getMilestone(uint256 proposalId, uint256 milestoneId)
+        external
+        view
+        returns (IProposalManager.Milestone memory)
+    {
+        return proposalManager.getMilestone(proposalId, milestoneId);
+    }
+
+    /**
+     * @notice Get all milestones for a proposal
+     * @param proposalId Proposal ID
+     * @return milestones Array of Milestone structs
+     */
+    function getMilestones(uint256 proposalId)
+        external
+        view
+        returns (IProposalManager.Milestone[] memory)
+    {
+        return proposalManager.getMilestones(proposalId);
+    }
+
+    /**
+     * @notice Get milestone count for a proposal
+     * @param proposalId Proposal ID
+     * @return count Number of milestones
+     */
+    function getMilestoneCount(uint256 proposalId) external view returns (uint256) {
+        return proposalManager.getMilestoneCount(proposalId);
+    }
+
+    /**
+     * @notice Check if voter has voted on milestone
+     * @param proposalId Proposal ID
+     * @param milestoneId Milestone index
+     * @param voter Voter address
+     * @return voted True if already voted
+     */
+    function hasVotedOnMilestone(uint256 proposalId, uint256 milestoneId, address voter)
+        external
+        view
+        returns (bool)
+    {
+        return milestoneManager.hasVotedOnMilestone(proposalId, milestoneId, voter);
+    }
+
+    /**
+     * @notice Get MilestoneManager contract address
+     */
+    function getMilestoneManagerAddress() external view returns (address) {
+        return address(milestoneManager);
+    }
 }
+

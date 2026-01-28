@@ -5,8 +5,9 @@ import { CONTRACT_ADDRESSES, MockIDRXABI, formatIDRX } from "@/lib/abi";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Loader2, Droplet, CheckCircle2, XCircle, Clock } from "lucide-react";
+import { Loader2, Droplet, CheckCircle2, XCircle, Clock, Vote } from "lucide-react";
 import { useIDRXBalance } from "@/hooks/useIDRXBalance";
+import { useVotingPower } from "@/hooks/useVotingPower";
 import { handleTransactionError, handleWalletError } from "@/lib/errors";
 import { useToast } from "@/hooks/use-toast";
 import { useEffect, useState } from "react";
@@ -14,6 +15,13 @@ import { useEffect, useState } from "react";
 export default function FaucetPage() {
   const { address, isConnected } = useAccount();
   const { balance, formattedBalance, refetch: refetchBalance } = useIDRXBalance();
+  const { 
+    formattedVotingPower, 
+    requestVotingPower, 
+    isRequesting: isRequestingVotingPower,
+    refetch: refetchVotingPower 
+  } = useVotingPower();
+  
   const { toast } = useToast();
   const [countdown, setCountdown] = useState<number | null>(null);
 
@@ -111,6 +119,11 @@ export default function FaucetPage() {
     }
   };
 
+  const handleClaimVotingPower = async () => {
+    await requestVotingPower();
+    refetchVotingPower();
+  };
+
   // Handle transaction confirmation
   useEffect(() => {
     if (isConfirmed) {
@@ -132,7 +145,8 @@ export default function FaucetPage() {
   };
 
   return (
-    <div className="container mx-auto px-4 py-8 max-w-2xl">
+    <div className="container mx-auto px-4 py-8 max-w-2xl space-y-8">
+      {/* IDRX Faucet */}
       <Card>
         <CardHeader className="text-center">
           <div className="mx-auto mb-4 w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center">
@@ -219,17 +233,6 @@ export default function FaucetPage() {
             </div>
           )}
 
-          {/* Info */}
-          <div className="bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4 text-sm space-y-2">
-            <p className="font-semibold text-blue-900 dark:text-blue-100">ℹ️ Faucet Information</p>
-            <ul className="list-disc list-inside text-blue-800 dark:text-blue-200 space-y-1">
-              <li>Claim limit: Once every 24 hours per address</li>
-              <li>Network: Base Sepolia Testnet</li>
-              <li>Tokens are for testing purposes only</li>
-              <li>Use tokens to donate to campaigns and test governance</li>
-            </ul>
-          </div>
-
           {/* Error Display */}
           {claimError && (
             <Alert variant="destructive">
@@ -241,6 +244,58 @@ export default function FaucetPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* Voting Power Faucet */}
+      <Card>
+        <CardHeader className="text-center">
+          <div className="mx-auto mb-4 w-16 h-16 bg-purple-100 rounded-full flex items-center justify-center">
+            <Vote className="w-8 h-8 text-purple-600" />
+          </div>
+          <CardTitle className="text-3xl">Governance Faucet</CardTitle>
+          <CardDescription>
+            Get vZKT tokens to participate in DAO voting and proposals
+          </CardDescription>
+        </CardHeader>
+
+        <CardContent className="space-y-6">
+          {/* Current Balance */}
+          <div className="bg-purple-50 rounded-lg p-4 text-center">
+            <p className="text-sm text-purple-700 mb-1">Your Voting Power</p>
+            <p className="text-2xl font-bold text-purple-900">{formattedVotingPower} vZKT</p>
+          </div>
+
+          <div className="text-sm text-muted-foreground text-center">
+            You need at least 100 vZKT to create proposals. Voting power is usually earned by donating, but you can claim some here for testing.
+          </div>
+
+          <Button
+            onClick={handleClaimVotingPower}
+            disabled={!isConnected || isRequestingVotingPower}
+            className="w-full bg-purple-600 hover:bg-purple-700"
+            size="lg"
+          >
+            {isRequestingVotingPower ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Requesting...
+              </>
+            ) : (
+              "Request 100 vZKT"
+            )}
+          </Button>
+        </CardContent>
+      </Card>
+
+      {/* Info */}
+      <div className="bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4 text-sm space-y-2">
+        <p className="font-semibold text-blue-900 dark:text-blue-100">ℹ️ Faucet Information</p>
+        <ul className="list-disc list-inside text-blue-800 dark:text-blue-200 space-y-1">
+          <li>Claim limit: Once every 24 hours per address (MockIDRX)</li>
+          <li>Network: Base Sepolia Testnet</li>
+          <li>Tokens are for testing purposes only</li>
+          <li>Use tokens to donate to campaigns and test governance</li>
+        </ul>
+      </div>
     </div>
   );
 }

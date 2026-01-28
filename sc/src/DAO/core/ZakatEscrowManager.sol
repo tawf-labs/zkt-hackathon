@@ -464,7 +464,6 @@ contract ZakatEscrowManager is AccessControl, ReentrancyGuard {
         pool.extensionGrantedAt = block.timestamp;
         pool.status = PoolStatus.Active;
 
-        uint256 oldDeadline = pool.deadline;
         pool.deadline = block.timestamp + EXTENSION_DURATION;
         pool.gracePeriodEnd = pool.deadline + GRACE_PERIOD;
 

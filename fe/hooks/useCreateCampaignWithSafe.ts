@@ -9,13 +9,30 @@ import { ethers } from 'ethers'
 import { ZKTCoreABI, CONTRACT_ADDRESSES } from '@/lib/abi'
 import { uploadFilesToPinata } from '@/lib/pinata-client'
 
+export interface MilestoneInputParams {
+  description: string
+  targetAmount: number // in IDRX, will be converted to wei
+}
+
 export interface CreateCampaignWithSafeParams {
+  // Required on-chain params
   title: string
   description: string
-  fundingGoal: number
-  isEmergency: boolean
-  zakatChecklistItems: string[]
-  metadataURI: string
+  goal: number // in IDRX, will be converted to wei (mapped to fundingGoal)
+  isEmergency?: boolean
+  zakatChecklistItems?: string[]
+  milestones?: MilestoneInputParams[]
+  
+  // Metadata params (stored in metadataURI)
+  campaignId?: string
+  startTime?: number
+  endTime?: number
+  category?: string
+  location?: string
+  organizationName?: string
+  organizationVerified?: boolean
+  tags?: string[]
+  imageUrls?: string[]
 }
 
 export interface CreateCampaignWithSafeResult {
@@ -79,20 +96,44 @@ export const useCreateCampaignWithSafe = (): CreateCampaignWithSafeResult => {
         // Encode transaction data using ZKTCore contract ABI (ethers v5)
         const iface = new ethers.utils.Interface(ZKTCoreABI)
 
-        const fundingGoalWei = ethers.utils.parseEther(params.fundingGoal.toString())
+        const fundingGoalWei = ethers.utils.parseEther(params.goal.toString())
+
+        // Convert milestones to contract format (with amounts in wei)
+        const milestoneInputs = (params.milestones || []).map(m => ({
+          description: m.description,
+          targetAmount: ethers.utils.parseEther(m.targetAmount.toString())
+        }))
+
+        // Build metadata object for IPFS storage
+        const metadata = {
+          campaignId: params.campaignId,
+          startTime: params.startTime,
+          endTime: params.endTime,
+          category: params.category,
+          location: params.location,
+          organizationName: params.organizationName,
+          organizationVerified: params.organizationVerified,
+          tags: params.tags,
+          imageUrls: params.imageUrls,
+        }
+        
+        // For now, store metadata as JSON string in metadataURI
+        // In production, this should be uploaded to IPFS first
+        const metadataURI = JSON.stringify(metadata)
 
         const data = iface.encodeFunctionData('createProposal', [
           params.title,
           params.description,
           fundingGoalWei,
-          params.isEmergency,
+          params.isEmergency || false,
           '0x0000000000000000000000000000000000000000000000000000000000000000', // mockZKKYCProof
-          params.zakatChecklistItems,
-          params.metadataURI,
+          params.zakatChecklistItems || [],
+          metadataURI,
+          milestoneInputs,
         ])
 
         console.log('📝 Proposal Title:', params.title)
-        console.log('📝 Metadata URI:', params.metadataURI)
+        console.log('📝 Milestones:', milestoneInputs.length)
 
         console.log('📝 Creating Safe transaction...')
 

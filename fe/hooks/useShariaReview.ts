@@ -18,7 +18,7 @@ export function useShariaBundle(bundleId: number | bigint) {
   const { data, isLoading, refetch } = useReadContract({
     address: CONTRACT_ADDRESSES.ZKTCore,
     abi: ZKTCoreABI,
-    functionName: 'getProposal', // May need to change if bundles are separate
+    functionName: 'getBundle',
     args: [BigInt(bundleId)],
     query: {
       enabled: !!bundleId,
@@ -107,8 +107,6 @@ export const useShariaReview = (options?: UseShariaReviewOptions) => {
 
   /**
    * Review a proposal (Sharia Council only)
-   * Note: This functionality may be implemented through a separate Sharia review manager
-   * or through the main ZKTCore contract
    */
   const reviewProposal = useCallback(
     async (
@@ -140,13 +138,22 @@ export const useShariaReview = (options?: UseShariaReviewOptions) => {
           mockZKReviewProof,
         });
 
-        // Note: The actual function name may vary based on contract implementation
-        // This is a placeholder for the Sharia review function
+        // Ensure proof is a valid bytes32 hex string or a default zero bytes32
+        const proofArg = mockZKReviewProof && mockZKReviewProof.startsWith('0x') && mockZKReviewProof.length === 66
+          ? mockZKReviewProof as `0x${string}`
+          : '0x0000000000000000000000000000000000000000000000000000000000000000';
+
         const hash = await writeContractAsync({
           address: CONTRACT_ADDRESSES.ZKTCore,
           abi: ZKTCoreABI,
-          functionName: 'updateKYCStatus', // Placeholder - may need actual review function
-          args: [BigInt(proposalId), approved ? KYCStatus.Verified : KYCStatus.Pending, mockZKReviewProof],
+          functionName: 'reviewProposal',
+          args: [
+            BigInt(bundleId),
+            BigInt(proposalId),
+            approved,
+            campaignType,
+            proofArg
+          ],
         });
 
         toast({
@@ -189,10 +196,66 @@ export const useShariaReview = (options?: UseShariaReviewOptions) => {
   );
 
   /**
+   * Finalize Sharia Bundle
+   */
+  const finalizeShariaBundle = useCallback(async (bundleId: number | bigint) => {
+      if (!isConnected || !address) {
+        const error = new Error('Wallet not connected');
+        toast({
+          title: 'Error',
+          description: 'Please connect your wallet first',
+          variant: 'destructive',
+        });
+        options?.onError?.(error);
+        return null;
+      }
+
+      setIsLoading(true);
+
+      try {
+        console.log('Finalizing Sharia bundle:', bundleId.toString());
+
+        const hash = await writeContractAsync({
+          address: CONTRACT_ADDRESSES.ZKTCore,
+          abi: ZKTCoreABI,
+          functionName: 'finalizeShariaBundle',
+          args: [BigInt(bundleId)],
+        });
+
+        toast({
+          title: 'Bundle Finalized ✅',
+          description: `Sharia bundle ${bundleId} has been finalized.`,
+        });
+
+        console.log('Finalize transaction submitted:', hash);
+        options?.onSuccess?.(hash);
+
+        return { txHash: hash };
+
+      } catch (error: any) {
+         console.error('Error finalizing bundle:', error);
+         let errorMessage = 'Failed to finalize bundle';
+         if (error?.message?.includes('user rejected')) errorMessage = 'Transaction rejected by user';
+         else if (error?.message) errorMessage = error.message;
+
+         toast({
+          title: 'Finalization Failed',
+          description: errorMessage,
+          variant: 'destructive',
+        });
+        options?.onError?.(error);
+        return null;
+      } finally {
+        setIsLoading(false);
+      }
+  }, [isConnected, address, writeContractAsync, options]);
+
+
+  /**
    * Check if address is a Sharia Council member
    */
   const isShariaCouncilMember = useCallback(async () => {
-    // This would need a view function in the contract
+    // This would need a view function in the contract or role check
     // For now, returning false as placeholder
     return false;
   }, []);
@@ -201,118 +264,57 @@ export const useShariaReview = (options?: UseShariaReviewOptions) => {
    * Check if address is a KYC Oracle
    */
   const isKYCOracle = useCallback(async () => {
-    // This would need a view function in the contract
+    // This would need a view function in the contract or role check
     // For now, returning false as placeholder
     return false;
   }, []);
 
   /**
    * Get proposals pending Sharia review
-   * Queries proposals that have passed community vote but need Sharia approval
    */
   const getPendingShariaReviews = useCallback(async () => {
-    // This would iterate through proposals and filter by:
-    // - status === ProposalStatus.CommunityPassed
-    // - campaignType === CampaignType.ZakatCompliant
-    // For now, returning empty array as placeholder
     return [];
   }, []);
 
   /**
    * Get bundle by proposal ID
-   * Used to find which bundle contains a specific proposal
    */
   const getBundleByProposalId = useCallback(async (proposalId: number | bigint) => {
-    // Query to find which bundle contains this proposal
-    // For now, returning the proposalId itself as the bundleId
-    // In the future, bundles may group multiple proposals
+    // For now, returning the proposalId itself as the bundleId placeholder
     return BigInt(proposalId);
   }, []);
 
   /**
-   * Submit Sharia Council vote on a proposal
-   * @param proposalId - The proposal ID to review
-   * @param approved - Whether the council approves the proposal
-   * @param mockZKReviewProof - ZK proof of the review
+   * Submit Sharia Council vote on a proposal (Wrapper for reviewProposal)
    */
   const submitShariaVote = useCallback(async (
     proposalId: number | bigint,
     approved: boolean,
     mockZKReviewProof: string = ''
   ) => {
-    if (!isConnected || !address) {
-      const error = new Error('Wallet not connected');
-      toast({
-        title: 'Error',
-        description: 'Please connect your wallet first',
-        variant: 'destructive',
-      });
-      options?.onError?.(error);
-      return null;
-    }
-
-    setIsLoading(true);
-
     try {
-      // Get the bundle (for now, same as proposalId)
+      // Get the bundle (placeholder logic used here, ideally fetch from contract)
       const bundleId = await getBundleByProposalId(proposalId);
+      
+      // Default to ZakatCompliant for now if not specified in this wrapper
+      const campaignType = CampaignType.ZakatCompliant; 
 
-      console.log('Submitting Sharia Council vote:', {
-        bundleId: bundleId.toString(),
-        proposalId: proposalId.toString(),
-        approved,
-        mockZKReviewProof,
-      });
-
-      // Call the review function through ZKTCore
-      // Note: The actual function may vary based on contract implementation
-      const hash = await writeContractAsync({
-        address: CONTRACT_ADDRESSES.ZKTCore,
-        abi: ZKTCoreABI,
-        functionName: 'updateKYCStatus', // Placeholder - may need actual review function
-        args: [BigInt(proposalId), approved ? 1 : 0, mockZKReviewProof],
-      });
-
-      toast({
-        title: approved ? 'Sharia Approved ✅' : 'Sharia Rejected ❌',
-        description: `Proposal ${proposalId} has been reviewed by the Sharia Council.`,
-      });
-
-      console.log('Sharia review transaction submitted:', hash);
-
-      options?.onSuccess?.(hash);
-
-      return { txHash: hash, bundleId };
-
+      return await reviewProposal(bundleId, proposalId, approved, campaignType, mockZKReviewProof);
     } catch (error: any) {
-      console.error('Error submitting Sharia review:', error);
-
-      let errorMessage = 'Failed to submit Sharia review';
-      if (error?.message?.includes('user rejected')) {
-        errorMessage = 'Transaction rejected by user';
-      } else if (error?.message?.includes('Only Sharia Council')) {
-        errorMessage = 'Only Sharia Council members can perform this action';
-      } else if (error?.message) {
-        errorMessage = error.message;
-      }
-
-      toast({
-        title: 'Review Failed',
-        description: errorMessage,
-        variant: 'destructive',
-      });
-
-      options?.onError?.(error);
-      return null;
-
-    } finally {
-      setIsLoading(false);
+       console.error('Error in submitShariaVote:', error);
+       toast({
+          title: 'Error',
+          description: 'Could not determine bundle ID for proposal',
+          variant: 'destructive'
+       });
+       return null;
     }
-  }, [isConnected, address, writeContractAsync, options, getBundleByProposalId]);
+  }, [getBundleByProposalId, reviewProposal]);
 
   return {
     updateKYCStatus,
     reviewProposal,
+    finalizeShariaBundle,
     submitShariaVote,
     isShariaCouncilMember,
     isKYCOracle,

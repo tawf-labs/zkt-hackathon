@@ -3,9 +3,12 @@
 import { useState, useEffect } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, Users, Clock, CircleCheck, Share2, Heart, MapPin, Calendar, Target, TrendingUp, Shield, FileText, Loader2, AlertTriangle, Timer } from 'lucide-react';
+import { ArrowLeft, Users, Clock, CircleCheck, Share2, Heart, MapPin, Calendar, Target, TrendingUp, Shield, FileText, Loader2, AlertTriangle, Timer, ExternalLink, Vote, CheckCircle2, XCircle, MinusCircle } from 'lucide-react';
 import { DonationDialog } from '@/components/donations/donation-dialog';
 import dynamic from 'next/dynamic';
+import { useMilestones, useMilestoneActions, useHasVotedOnMilestone } from '@/hooks/useMilestones';
+import { useAccount } from 'wagmi';
+import { MilestoneStatus, MilestoneData, VoteSupport, getMilestoneStatusLabel, getMilestoneStatusColor } from '@/lib/types';
 
 const CampaignMap = dynamic(() => import('@/components/campaigns/campaign-map'), {
   loading: () => <div className="w-full h-[400px] bg-muted animate-pulse rounded-xl" />,
@@ -16,6 +19,8 @@ const donationAmounts = [10000, 25000, 50000, 100000, 250000, 500000];
 
 interface CampaignDetailData {
   id: number;
+  proposalId?: number; // On-chain proposal ID for milestone fetching
+  poolId?: number; // On-chain pool ID for donations
   title: string;
   organization: {
     name: string;
@@ -64,6 +69,25 @@ export default function CampaignDetail() {
   const [activeTab, setActiveTab] = useState('story');
   const [selectedImage, setSelectedImage] = useState(0);
   const [showDonationDialog, setShowDonationDialog] = useState(false);
+
+  // Wallet connection for milestone voting
+  const { address, isConnected } = useAccount();
+
+  // Fetch on-chain milestones if proposalId is available
+  const { 
+    milestones: onChainMilestones, 
+    isLoading: milestonesLoading, 
+    refetch: refetchMilestones 
+  } = useMilestones(campaignDetail?.proposalId);
+
+  const { 
+    voteMilestone, 
+    isLoading: votingLoading 
+  } = useMilestoneActions({
+    onSuccess: () => {
+      refetchMilestones();
+    }
+  });
 
   // Fetch campaign detail
   useEffect(() => {
@@ -389,35 +413,145 @@ export default function CampaignDetail() {
                 </div>
               )}
 
-              {/* Milestones */}
-              <div className="bg-card border border-border rounded-xl p-6">
-                <div className="flex items-center gap-2 mb-4">
-                  <Target className="h-5 w-5" />
-                  <h3 className="font-bold text-lg">Campaign Milestones</h3>
-                </div>
-                <div className="space-y-3">
-                  {campaignDetail.milestones.map((milestone, idx) => (
-                    <div key={idx} className="flex items-start gap-3">
-                      <div className={`h-5 w-5 rounded-full border-2 flex items-center justify-center mt-0.5 ${milestone.achieved ? 'border-green-600 bg-green-600' : 'border-border'
-                        }`}>
-                        {milestone.achieved && (
-                          <CircleCheck className="h-3 w-3 text-white" />
+              {/* Milestones - On-Chain Data */}
+              {campaignDetail.proposalId !== undefined && onChainMilestones.length > 0 ? (
+                <div className="bg-card border border-border rounded-xl p-6">
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-2">
+                      <Target className="h-5 w-5" />
+                      <h3 className="font-bold text-lg">Milestones (On-Chain)</h3>
+                    </div>
+                    <span className="text-xs text-muted-foreground bg-secondary px-2 py-1 rounded">
+                      {onChainMilestones.filter(m => m.status === MilestoneStatus.Completed).length} / {onChainMilestones.length} completed
+                    </span>
+                  </div>
+                  <div className="space-y-4">
+                    {onChainMilestones.map((milestone, idx) => (
+                      <div key={idx} className="border border-border rounded-lg p-4 space-y-3">
+                        {/* Milestone Header */}
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className="text-sm font-semibold">Milestone {idx + 1}</span>
+                              <span className={`text-xs px-2 py-0.5 rounded-full border ${getMilestoneStatusColor(milestone.status)}`}>
+                                {milestone.statusLabel}
+                              </span>
+                            </div>
+                            <p className="text-sm text-muted-foreground">{milestone.description}</p>
+                          </div>
+                          <div className="text-right">
+                            <span className="text-sm font-bold text-primary">{milestone.targetAmount} IDRX</span>
+                          </div>
+                        </div>
+
+                        {/* Proof Link */}
+                        {milestone.proofIPFS && (
+                          <div className="flex items-center gap-2 text-sm">
+                            <FileText className="h-4 w-4 text-muted-foreground" />
+                            <a 
+                              href={`https://gateway.pinata.cloud/ipfs/${milestone.proofIPFS}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-primary hover:underline flex items-center gap-1"
+                            >
+                              View Proof <ExternalLink className="h-3 w-3" />
+                            </a>
+                          </div>
+                        )}
+
+                        {/* Voting Progress (if in voting state) */}
+                        {milestone.status === MilestoneStatus.Voting && (
+                          <div className="bg-secondary/50 rounded-lg p-3 space-y-2">
+                            <div className="flex items-center justify-between text-sm">
+                              <span className="font-medium">Community Vote</span>
+                              <span className="text-muted-foreground">Ends: {milestone.voteEnd}</span>
+                            </div>
+                            <div className="flex gap-4 text-sm">
+                              <div className="flex items-center gap-1">
+                                <CheckCircle2 className="h-4 w-4 text-green-600" />
+                                <span className="font-semibold text-green-600">{milestone.votesFor}</span>
+                              </div>
+                              <div className="flex items-center gap-1">
+                                <XCircle className="h-4 w-4 text-red-500" />
+                                <span className="font-semibold text-red-500">{milestone.votesAgainst}</span>
+                              </div>
+                              <div className="flex items-center gap-1">
+                                <MinusCircle className="h-4 w-4 text-gray-400" />
+                                <span className="font-semibold text-gray-500">{milestone.votesAbstain}</span>
+                              </div>
+                            </div>
+
+                            {/* Voting Buttons */}
+                            {isConnected && milestone.isVotingActive && (
+                              <div className="flex gap-2 pt-2">
+                                <button
+                                  onClick={() => voteMilestone(campaignDetail.proposalId!, idx, VoteSupport.For)}
+                                  disabled={votingLoading}
+                                  className="flex-1 text-xs py-2 px-3 rounded-md bg-green-600 text-white hover:bg-green-700 disabled:opacity-50 transition-colors flex items-center justify-center gap-1"
+                                >
+                                  <CheckCircle2 className="h-3 w-3" /> Approve
+                                </button>
+                                <button
+                                  onClick={() => voteMilestone(campaignDetail.proposalId!, idx, VoteSupport.Against)}
+                                  disabled={votingLoading}
+                                  className="flex-1 text-xs py-2 px-3 rounded-md bg-red-600 text-white hover:bg-red-700 disabled:opacity-50 transition-colors flex items-center justify-center gap-1"
+                                >
+                                  <XCircle className="h-3 w-3" /> Reject
+                                </button>
+                                <button
+                                  onClick={() => voteMilestone(campaignDetail.proposalId!, idx, VoteSupport.Abstain)}
+                                  disabled={votingLoading}
+                                  className="text-xs py-2 px-3 rounded-md border border-border hover:bg-accent disabled:opacity-50 transition-colors"
+                                >
+                                  Abstain
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Completed Status */}
+                        {milestone.status === MilestoneStatus.Completed && (
+                          <div className="flex items-center gap-2 text-sm text-green-600">
+                            <CircleCheck className="h-4 w-4" />
+                            <span>Completed on {milestone.releasedAt}</span>
+                          </div>
                         )}
                       </div>
-                      <div className="flex-1">
-                        <div className="flex justify-between items-start gap-2">
-                          <span className={`text-sm font-medium ${milestone.achieved ? 'text-foreground' : 'text-muted-foreground'}`}>
-                            {milestone.label}
-                          </span>
-                          <span className={`text-sm font-semibold ${milestone.achieved ? 'text-green-600' : 'text-muted-foreground'}`}>
-                            {formatCurrency(milestone.amount)}
-                          </span>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                /* Static Milestones Fallback (from API data) */
+                <div className="bg-card border border-border rounded-xl p-6">
+                  <div className="flex items-center gap-2 mb-4">
+                    <Target className="h-5 w-5" />
+                    <h3 className="font-bold text-lg">Campaign Milestones</h3>
+                  </div>
+                  <div className="space-y-3">
+                    {campaignDetail.milestones.map((milestone, idx) => (
+                      <div key={idx} className="flex items-start gap-3">
+                        <div className={`h-5 w-5 rounded-full border-2 flex items-center justify-center mt-0.5 ${milestone.achieved ? 'border-green-600 bg-green-600' : 'border-border'
+                          }`}>
+                          {milestone.achieved && (
+                            <CircleCheck className="h-3 w-3 text-white" />
+                          )}
+                        </div>
+                        <div className="flex-1">
+                          <div className="flex justify-between items-start gap-2">
+                            <span className={`text-sm font-medium ${milestone.achieved ? 'text-foreground' : 'text-muted-foreground'}`}>
+                              {milestone.label}
+                            </span>
+                            <span className={`text-sm font-semibold ${milestone.achieved ? 'text-green-600' : 'text-muted-foreground'}`}>
+                              {formatCurrency(milestone.amount)}
+                            </span>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
 
             {/* Tabs */}

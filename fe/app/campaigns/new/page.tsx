@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import { 
   Upload, MapPin, Target, 
   CheckCircle2, Loader2, X, AlertCircle,
-  Users, Lock, Wallet, ArrowLeft
+  Users, Lock, Wallet, ArrowLeft, Plus, Trash2
 } from 'lucide-react';
 import { useCreateCampaignWithSafe } from '@/hooks/useCreateCampaignWithSafe';
 import { useAccount } from 'wagmi';
@@ -73,6 +73,7 @@ function CreateCampaignInner() {
   const [createdCampaign, setCreatedCampaign] = useState<any>(null);
   const [imageFiles, setImageFiles] = useState<File[]>([]);
   const [imagePreviewUrls, setImagePreviewUrls] = useState<string[]>([]);
+  const [milestones, setMilestones] = useState<{ description: string; targetAmount: string }[]>([]);
   const isMountedRef = useRef(false);
   
   // Check if user is Safe signer (only after hydration)
@@ -157,6 +158,28 @@ function CreateCampaignInner() {
     setImagePreviewUrls(prev => prev.filter((_, i) => i !== idx));
   };
 
+  // Milestone handlers
+  const addMilestone = () => {
+    setMilestones(prev => [...prev, { description: '', targetAmount: '' }]);
+  };
+
+  const updateMilestone = (index: number, field: 'description' | 'targetAmount', value: string) => {
+    setMilestones(prev => prev.map((m, i) => 
+      i === index ? { ...m, [field]: value } : m
+    ));
+  };
+
+  const removeMilestone = (index: number) => {
+    setMilestones(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const getMilestonesTotal = (): number => {
+    return milestones.reduce((sum, m) => {
+      const amount = parseFloat(m.targetAmount) || 0;
+      return sum + amount;
+    }, 0);
+  };
+
   // Validation
   const validateForm = (): boolean => {
     console.log('🔍 Form Data:', { campaignData, imageFiles });
@@ -206,6 +229,33 @@ function CreateCampaignInner() {
       console.error('❌ No images uploaded');
       toast({ title: 'Error', description: 'At least one image is required', variant: 'destructive' });
       return false;
+    }
+
+    // Validate milestones if any are added
+    if (milestones.length > 0) {
+      for (let i = 0; i < milestones.length; i++) {
+        const m = milestones[i];
+        if (!m.description.trim()) {
+          toast({ title: 'Error', description: `Milestone ${i + 1} requires a description`, variant: 'destructive' });
+          return false;
+        }
+        const amount = parseFloat(m.targetAmount);
+        if (isNaN(amount) || amount <= 0) {
+          toast({ title: 'Error', description: `Milestone ${i + 1} requires a valid amount`, variant: 'destructive' });
+          return false;
+        }
+      }
+
+      const total = getMilestonesTotal();
+      const goal = parseFloat(campaignData.goal);
+      if (total > goal) {
+        toast({ 
+          title: 'Error', 
+          description: `Milestones total (${total.toLocaleString()} IDRX) exceeds funding goal (${goal.toLocaleString()} IDRX)`, 
+          variant: 'destructive' 
+        });
+        return false;
+      }
     }
 
     console.log('✅ All validations passed!');
@@ -273,7 +323,11 @@ function CreateCampaignInner() {
         organizationName: campaignData.organizationName,
         organizationVerified: campaignData.organizationVerified,
         tags: campaignData.tags,
-        imageUrls: uploadedImageUrls.length > 0 ? uploadedImageUrls : imagePreviewUrls, // Use uploaded URLs if available, otherwise use preview URLs
+        imageUrls: uploadedImageUrls.length > 0 ? uploadedImageUrls : imagePreviewUrls,
+        milestones: milestones.filter(m => m.description.trim() && m.targetAmount).map(m => ({
+          description: m.description,
+          targetAmount: parseFloat(m.targetAmount)
+        })),
       });
 
       console.log('📊 createCampaignWithSafe result:', result);
@@ -321,6 +375,7 @@ function CreateCampaignInner() {
     setImageFiles([]);
     imagePreviewUrls.forEach(url => URL.revokeObjectURL(url));
     setImagePreviewUrls([]);
+    setMilestones([]);
   };
 
   // Loading/Success Screen
@@ -543,6 +598,88 @@ function CreateCampaignInner() {
                 className="w-full px-4 py-2.5 border border-input rounded-lg focus:outline-none focus:ring-2 focus:ring-primary transition-colors"
               />
               <p className="text-xs text-muted-foreground mt-1">Minimum 1,000 IDRX</p>
+            </div>
+
+            {/* Milestones */}
+            <div className="bg-secondary/30 p-4 rounded-lg">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <p className="text-sm font-semibold">Milestones (Optional)</p>
+                  <p className="text-xs text-muted-foreground">Define funding milestones for staged fund release with community oversight</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={addMilestone}
+                  className="flex items-center gap-1 text-sm font-medium text-primary hover:text-primary/80 transition-colors"
+                >
+                  <Plus className="h-4 w-4" />
+                  Add Milestone
+                </button>
+              </div>
+
+              {milestones.length > 0 && (
+                <div className="space-y-3">
+                  {milestones.map((milestone, index) => (
+                    <div key={index} className="bg-white p-4 rounded-lg border border-border">
+                      <div className="flex items-start justify-between mb-3">
+                        <span className="text-sm font-medium text-muted-foreground">Milestone {index + 1}</span>
+                        <button
+                          type="button"
+                          onClick={() => removeMilestone(index)}
+                          className="text-red-500 hover:text-red-600 transition-colors"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
+                      <div className="space-y-3">
+                        <div>
+                          <label className="block text-xs font-medium mb-1">Description</label>
+                          <input
+                            type="text"
+                            placeholder="e.g., Complete initial relief distribution"
+                            value={milestone.description}
+                            onChange={(e) => updateMilestone(index, 'description', e.target.value)}
+                            className="w-full px-3 py-2 text-sm border border-input rounded-lg focus:outline-none focus:ring-2 focus:ring-primary transition-colors"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium mb-1">Target Amount (IDRX)</label>
+                          <input
+                            type="number"
+                            placeholder="e.g., 2500"
+                            value={milestone.targetAmount}
+                            onChange={(e) => updateMilestone(index, 'targetAmount', e.target.value)}
+                            className="w-full px-3 py-2 text-sm border border-input rounded-lg focus:outline-none focus:ring-2 focus:ring-primary transition-colors"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+
+                  {/* Milestone Summary */}
+                  <div className="flex items-center justify-between pt-2 border-t border-border">
+                    <span className="text-sm font-medium">Total Milestones Amount:</span>
+                    <span className={`text-sm font-semibold ${
+                      campaignData.goal && getMilestonesTotal() > parseFloat(campaignData.goal)
+                        ? 'text-red-500'
+                        : 'text-green-600'
+                    }`}>
+                      {getMilestonesTotal().toLocaleString()} IDRX
+                      {campaignData.goal && (
+                        <span className="text-muted-foreground font-normal">
+                          {' '}/ {parseFloat(campaignData.goal).toLocaleString()} IDRX goal
+                        </span>
+                      )}
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {milestones.length === 0 && (
+                <div className="text-center py-4 text-sm text-muted-foreground">
+                  No milestones added. Click "Add Milestone" to define staged fund releases.
+                </div>
+              )}
             </div>
 
             {/* Organization Info */}

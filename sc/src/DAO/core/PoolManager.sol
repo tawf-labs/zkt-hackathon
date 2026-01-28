@@ -26,6 +26,8 @@ contract PoolManager is AccessControl, ReentrancyGuard {
         uint256 createdAt;
         address[] donors;
         bool fundsWithdrawn;
+        uint256 totalWithdrawn;        // Track partial withdrawals for milestone campaigns
+        bool usesMilestones;           // Flag if campaign has milestones
     }
     
     mapping(uint256 => uint256) public proposalToPool;
@@ -61,6 +63,12 @@ contract PoolManager is AccessControl, ReentrancyGuard {
     );
     event FundingGoalReached(uint256 indexed poolId, uint256 totalRaised);
     event FundsWithdrawn(uint256 indexed poolId, address indexed organizer, uint256 amount);
+    event MilestoneFundsReleased(
+        uint256 indexed poolId,
+        uint256 indexed milestoneId,
+        address indexed organizer,
+        uint256 amount
+    );
     
     constructor(
         address _proposalManager,
@@ -79,19 +87,31 @@ contract PoolManager is AccessControl, ReentrancyGuard {
         _grantRole(ADMIN_ROLE, msg.sender);
     }
     
-    function createCampaignPool(uint256 proposalId) 
-        external 
-        onlyRole(ADMIN_ROLE) 
-        returns (uint256) 
+    function createCampaignPool(uint256 proposalId)
+        external
+        onlyRole(ADMIN_ROLE)
+        returns (uint256)
     {
         IProposalManager.Proposal memory proposal = proposalManager.getProposal(proposalId);
-        
+
         require(proposal.status == IProposalManager.ProposalStatus.ShariaApproved, "Not approved");
         require(proposalToPool[proposalId] == 0, "Pool already created");
-        
+
+        // Check if proposal has milestones
+        uint256 milestoneCount = proposalManager.getMilestoneCount(proposalId);
+        bool hasMilestones = milestoneCount > 0;
+
+        // Reject Zakat campaigns with milestones (should have been caught earlier, but double-check)
+        if (hasMilestones) {
+            require(
+                proposal.campaignType != IProposalManager.CampaignType.ZakatCompliant,
+                "Zakat campaigns cannot use milestones"
+            );
+        }
+
         poolCount++;
         uint256 poolId = poolCount;
-        
+
         CampaignPool storage pool = campaignPools[poolId];
         pool.poolId = poolId;
         pool.proposalId = proposalId;
@@ -101,13 +121,21 @@ contract PoolManager is AccessControl, ReentrancyGuard {
         pool.campaignTitle = proposal.title;
         pool.isActive = true;
         pool.createdAt = block.timestamp;
-        
+        pool.totalWithdrawn = 0;
+        pool.usesMilestones = hasMilestones;
+
         proposalToPool[proposalId] = poolId;
         proposalManager.updateProposalPoolId(proposalId, poolId);
-        proposalManager.updateProposalStatus(proposalId, IProposalManager.ProposalStatus.PoolCreated, 0, 0, 0);
-        
+        proposalManager.updateProposalStatus(
+            proposalId,
+            IProposalManager.ProposalStatus.PoolCreated,
+            0,
+            0,
+            0
+        );
+
         emit CampaignPoolCreated(poolId, proposalId, proposal.campaignType);
-        
+
         return poolId;
     }
     
@@ -197,22 +225,92 @@ contract PoolManager is AccessControl, ReentrancyGuard {
     
     function withdrawFunds(address organizer, uint256 poolId) external nonReentrant {
         CampaignPool storage pool = campaignPools[poolId];
-        
+
         require(pool.organizer == organizer, "Not organizer");
         require(!pool.fundsWithdrawn, "Funds already withdrawn");
         require(pool.raisedAmount > 0, "No funds to withdraw");
-        
+        require(!pool.usesMilestones, "Use withdrawMilestoneFunds for milestone campaigns");
+
         pool.fundsWithdrawn = true;
         pool.isActive = false;
-        
+
         uint256 amount = pool.raisedAmount;
-        proposalManager.updateProposalStatus(pool.proposalId, IProposalManager.ProposalStatus.Completed, 0, 0, 0);
-        
+        proposalManager.updateProposalStatus(
+            pool.proposalId,
+            IProposalManager.ProposalStatus.Completed,
+            0,
+            0,
+            0
+        );
+
         require(idrxToken.transfer(organizer, amount), "Transfer failed");
-        
+
         emit FundsWithdrawn(poolId, organizer, amount);
     }
-    
+
+    /**
+     * @notice Withdraw funds for an approved milestone
+     * @param organizer Address of the organizer
+     * @param poolId Campaign pool ID
+     * @param milestoneId Milestone index to withdraw funds for
+     */
+    function withdrawMilestoneFunds(address organizer, uint256 poolId, uint256 milestoneId)
+        external
+        nonReentrant
+    {
+        CampaignPool storage pool = campaignPools[poolId];
+
+        require(pool.organizer == organizer, "Not organizer");
+        require(pool.usesMilestones, "Pool does not use milestones");
+        require(pool.raisedAmount > 0, "No funds available");
+
+        // Get milestone and validate
+        IProposalManager.Milestone memory milestone =
+            proposalManager.getMilestone(pool.proposalId, milestoneId);
+
+        require(milestone.milestoneId == milestoneId, "Milestone does not exist");
+        require(
+            milestone.status == IProposalManager.MilestoneStatus.Approved,
+            "Milestone not approved"
+        );
+
+        // Validate we don't exceed raised amount
+        require(
+            pool.totalWithdrawn + milestone.targetAmount <= pool.raisedAmount,
+            "Insufficient funds in pool"
+        );
+
+        // Update pool tracking
+        pool.totalWithdrawn += milestone.targetAmount;
+
+        // Update milestone status to Completed
+        proposalManager.updateMilestoneStatus(
+            pool.proposalId,
+            milestoneId,
+            IProposalManager.MilestoneStatus.Completed,
+            milestone.votesFor,
+            milestone.votesAgainst,
+            milestone.votesAbstain
+        );
+
+        // Advance to next milestone
+        proposalManager.advanceToNextMilestone(pool.proposalId);
+        proposalManager.addToReleasedAmount(pool.proposalId, milestone.targetAmount);
+
+        // Check if all milestones completed
+        uint256 milestoneCount = proposalManager.getMilestoneCount(pool.proposalId);
+        IProposalManager.Proposal memory proposal = proposalManager.getProposal(pool.proposalId);
+        if (proposal.currentMilestoneIndex >= milestoneCount) {
+            pool.fundsWithdrawn = true;
+            pool.isActive = false;
+        }
+
+        // Transfer funds
+        require(idrxToken.transfer(organizer, milestone.targetAmount), "Transfer failed");
+
+        emit MilestoneFundsReleased(poolId, milestoneId, organizer, milestone.targetAmount);
+    }
+
     function getPool(uint256 poolId) external view returns (CampaignPool memory) {
         return campaignPools[poolId];
     }

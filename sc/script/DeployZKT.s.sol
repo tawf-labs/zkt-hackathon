@@ -5,151 +5,199 @@ import "../src/tokens/MockIDRX.sol";
 import "../src/tokens/DonationReceiptNFT.sol";
 import "../src/tokens/VotingToken.sol";
 import "../src/DAO/ZKTCore.sol";
+import "../src/DAO/core/ProposalManager.sol";
+import "../src/DAO/core/VotingManager.sol";
+import "../src/DAO/core/ShariaReviewManager.sol";
+import "../src/DAO/core/PoolManager.sol";
+import "../src/DAO/core/ZakatEscrowManager.sol";
+import "../src/DAO/core/MilestoneManager.sol";
 
 /**
  * @title DeployZKTDAO
  * @notice Deployment script for ZKT Community DAO system on Base Sepolia
- * @dev Run with: forge script script/DeployDAO.s.sol:DeployDAO --rpc-url base_sepolia --broadcast --verify
+ * @dev Run with: forge script script/DeployZKT.s.sol --rpc-url <rpc> --broadcast --verify
  */
 contract DeployZKT is Script {
-    // Deployment addresses (will be set after deployment)
+    // Deployment addresses
     MockIDRX public idrxToken;
     DonationReceiptNFT public receiptNFT;
     VotingToken public votingToken;
+
+    ProposalManager public proposalManager;
+    VotingManager public votingManager;
+    ShariaReviewManager public shariaReviewManager;
+    PoolManager public poolManager;
+    ZakatEscrowManager public zakatEscrowManager;
+    MilestoneManager public milestoneManager;
+
     ZKTCore public dao;
 
-    // ZakatEscrowManager is deployed within ZKTCore
-    address public zakatEscrowManager;
-
-    // Example fallback pool address (would be replaced with actual charitable organization)
+    // Example fallback pool address
     address public exampleFallbackPool;
-    
+
     function run() external {
-        // Get deployer private key from environment
-        uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
-        address deployer = vm.addr(deployerPrivateKey);
-        
+        address deployer = msg.sender;
+
         console.log("Deploying contracts with account:", deployer);
         console.log("Account balance:", deployer.balance);
-        
-        vm.startBroadcast(deployerPrivateKey);
-        
-        // 1. Deploy MockIDRX token
-        console.log("\n1. Deploying MockIDRX token...");
+
+        vm.startBroadcast();
+
+        // 1. Deploy Tokens
+        console.log("\n1. Deploying tokens...");
         idrxToken = new MockIDRX();
-        console.log("MockIDRX deployed at:", address(idrxToken));
-        
-        // 2. Deploy DonationReceiptNFT
-        console.log("\n2. Deploying DonationReceiptNFT...");
         receiptNFT = new DonationReceiptNFT();
-        console.log("DonationReceiptNFT deployed at:", address(receiptNFT));
-        
-        // 3. Deploy VotingToken
-        console.log("\n3. Deploying VotingToken...");
         votingToken = new VotingToken();
-        console.log("VotingToken deployed at:", address(votingToken));
-        
-        // 4. Deploy ZKTCore
-        console.log("\n4. Deploying ZKTCore (orchestrator + all managers)...");
-        dao = new ZKTCore(address(idrxToken), address(receiptNFT), address(votingToken));
+        console.log("Tokens deployed.");
+
+        // 2. Deploy Managers (Dependency Order)
+        console.log("\n2. Deploying core managers...");
+
+        proposalManager = new ProposalManager();
+        console.log("ProposalManager deployed at:", address(proposalManager));
+
+        votingManager = new VotingManager(
+            address(proposalManager),
+            address(votingToken)
+        );
+        console.log("VotingManager deployed at:", address(votingManager));
+
+        shariaReviewManager = new ShariaReviewManager(address(proposalManager));
+        console.log(
+            "ShariaReviewManager deployed at:",
+            address(shariaReviewManager)
+        );
+
+        poolManager = new PoolManager(
+            address(proposalManager),
+            address(idrxToken),
+            address(receiptNFT)
+        );
+        console.log("PoolManager deployed at:", address(poolManager));
+
+        zakatEscrowManager = new ZakatEscrowManager(
+            address(proposalManager),
+            address(idrxToken),
+            address(receiptNFT)
+        );
+        console.log(
+            "ZakatEscrowManager deployed at:",
+            address(zakatEscrowManager)
+        );
+
+        milestoneManager = new MilestoneManager(
+            address(proposalManager),
+            address(votingToken)
+        );
+        console.log("MilestoneManager deployed at:", address(milestoneManager));
+
+        // 3. Deploy ZKTCore (Orchestrator)
+        console.log("\n3. Deploying ZKTCore orchestrator...");
+        dao = new ZKTCore(
+            address(idrxToken),
+            address(receiptNFT),
+            address(votingToken),
+            address(proposalManager),
+            address(votingManager),
+            address(shariaReviewManager),
+            address(poolManager),
+            address(zakatEscrowManager),
+            address(milestoneManager)
+        );
         console.log("ZKTCore deployed at:", address(dao));
-        console.log("ProposalManager deployed at:", dao.getProposalManagerAddress());
-        console.log("VotingManager deployed at:", dao.getVotingManagerAddress());
-        console.log("ShariaReviewManager deployed at:", dao.getShariaReviewManagerAddress());
-        console.log("PoolManager deployed at:", dao.getPoolManagerAddress());
-        zakatEscrowManager = dao.getZakatEscrowManagerAddress();
-        console.log("ZakatEscrowManager deployed at:", zakatEscrowManager);
 
-        // 5. Grant MINTER_ROLE to PoolManager for DonationReceiptNFT
-        console.log("\n5. Granting MINTER_ROLE to PoolManager...");
-        receiptNFT.grantRole(receiptNFT.MINTER_ROLE(), dao.getPoolManagerAddress());
-        console.log("MINTER_ROLE granted to PoolManager");
+        // 4. Link Modules and Permissions
+        // We need to grant ZKTCore the necessary roles on each manager,
+        // and link managers to each other where needed.
+        console.log("\n4. Wiring up permissions and cross-module roles...");
 
-        // 5.1. Grant MINTER_ROLE to ZakatEscrowManager for DonationReceiptNFT
-        console.log("\n5.1. Granting MINTER_ROLE to ZakatEscrowManager...");
-        receiptNFT.grantRole(receiptNFT.MINTER_ROLE(), zakatEscrowManager);
-        console.log("MINTER_ROLE granted to ZakatEscrowManager");
+        // ZKTCore permissions on ProposalManager
+        proposalManager.grantRole(
+            proposalManager.ORGANIZER_ROLE(),
+            address(dao)
+        );
+        proposalManager.grantRole(
+            proposalManager.KYC_ORACLE_ROLE(),
+            address(dao)
+        );
+        proposalManager.grantRole(proposalManager.ADMIN_ROLE(), address(dao)); // To allow setVotingPeriod etc.
 
-        // 6. Grant MINTER_ROLE to DAO in VotingToken
-        console.log("\n6. Granting MINTER_ROLE to DAO for VotingToken...");
+        // ZKTCore permissions on other managers
+        votingManager.grantRole(dao.DEFAULT_ADMIN_ROLE(), address(dao));
+        shariaReviewManager.grantRole(
+            shariaReviewManager.SHARIA_COUNCIL_ROLE(),
+            address(dao)
+        );
+        shariaReviewManager.grantRole(dao.DEFAULT_ADMIN_ROLE(), address(dao));
+
+        poolManager.grantRole(poolManager.ADMIN_ROLE(), address(dao));
+        poolManager.grantRole(dao.DEFAULT_ADMIN_ROLE(), address(dao));
+
+        zakatEscrowManager.grantRole(
+            zakatEscrowManager.ADMIN_ROLE(),
+            address(dao)
+        );
+        zakatEscrowManager.grantRole(
+            zakatEscrowManager.SHARIA_COUNCIL_ROLE(),
+            address(dao)
+        );
+        zakatEscrowManager.grantRole(dao.DEFAULT_ADMIN_ROLE(), address(dao));
+
+        milestoneManager.grantRole(
+            milestoneManager.ORGANIZER_ROLE(),
+            address(dao)
+        );
+        milestoneManager.grantRole(dao.DEFAULT_ADMIN_ROLE(), address(dao));
+
+        // Cross-module permissions on ProposalManager
+        proposalManager.grantRole(
+            proposalManager.VOTING_MANAGER_ROLE(),
+            address(votingManager)
+        );
+        proposalManager.grantRole(
+            proposalManager.VOTING_MANAGER_ROLE(),
+            address(shariaReviewManager)
+        );
+        proposalManager.grantRole(
+            proposalManager.VOTING_MANAGER_ROLE(),
+            address(poolManager)
+        );
+        proposalManager.grantRole(
+            proposalManager.VOTING_MANAGER_ROLE(),
+            address(zakatEscrowManager)
+        );
+        proposalManager.grantRole(
+            proposalManager.MILESTONE_MANAGER_ROLE(),
+            address(milestoneManager)
+        );
+        proposalManager.grantRole(
+            proposalManager.MILESTONE_MANAGER_ROLE(),
+            address(poolManager)
+        );
+
+        // Token minting permissions
+        receiptNFT.grantRole(receiptNFT.MINTER_ROLE(), address(poolManager));
+        receiptNFT.grantRole(
+            receiptNFT.MINTER_ROLE(),
+            address(zakatEscrowManager)
+        );
         votingToken.grantRole(votingToken.MINTER_ROLE(), address(dao));
-        console.log("MINTER_ROLE granted to DAO");
-        
-        // 7. Setup initial roles for deployer (for testing)
-        // Note: Deployer has DEFAULT_ADMIN_ROLE for initial setup only
-        // After configuration, consider renouncing DEFAULT_ADMIN_ROLE for full decentralization
-        console.log("\n7. Setting up initial roles...");
+
+        // 5. Initial setup
+        console.log("\n5. Performing initial configuration...");
         dao.grantOrganizerRole(deployer);
         dao.grantShariaCouncilRole(deployer);
         dao.grantKYCOracleRole(deployer);
-        console.log("Initial roles granted to deployer (ORGANIZER, SHARIA_COUNCIL, KYC_ORACLE)");
-        
-        // 8. Grant initial voting power to deployer (for testing)
-        console.log("\n8. Granting initial voting power...");
-        dao.grantVotingPower(deployer, 1000 * 10**18); // 1000 voting tokens
-        console.log("Granted 1000 voting tokens to deployer");
 
-        // 9. Setup ZakatEscrowManager default fallback pool
-        console.log("\n9. Setting up ZakatEscrowManager...");
-        // For now, use deployer address as example fallback pool
-        // In production, this would be a verified charitable organization
+        // Grant initial voting power
+        dao.grantVotingPower(deployer, 1000 * 10 ** 18);
+
+        // Setup default fallback pool
         exampleFallbackPool = deployer;
         dao.setDefaultFallbackPool(exampleFallbackPool);
-        console.log("Default fallback pool set to:", exampleFallbackPool);
-        console.log("Note: In production, set default fallback pool to a verified Zakat distributor");
 
-        // 10. ZakatEscrowManager configuration summary
-        console.log("\n10. ZakatEscrowManager Configuration:");
-        console.log("- Zakat Period (hard deadline): 30 days");
-        console.log("- Grace Period: 7 days");
-        console.log("- Extension Duration: 14 days (one-time)");
-        console.log("- Fallback Pool Approval: Propose -> Sharia Council Approves (final)");
+        console.log("Deployment and configuration complete.");
 
         vm.stopBroadcast();
-        
-        // Print deployment summary
-        console.log("\n====== DEPLOYMENT SUMMARY ======");
-        console.log("Network: Base Sepolia");
-        console.log("Deployer:", deployer);
-        console.log("\nToken Contract Addresses:");
-        console.log("MockIDRX:", address(idrxToken));
-        console.log("DonationReceiptNFT:", address(receiptNFT));
-        console.log("VotingToken:", address(votingToken));
-        console.log("\nDAO Contract Addresses:");
-        console.log("ZKTCore (Orchestrator):", address(dao));
-        console.log("ProposalManager:", dao.getProposalManagerAddress());
-        console.log("VotingManager:", dao.getVotingManagerAddress());
-        console.log("ShariaReviewManager:", dao.getShariaReviewManagerAddress());
-        console.log("PoolManager (Normal campaigns):", dao.getPoolManagerAddress());
-        console.log("ZakatEscrowManager (Zakat campaigns):", zakatEscrowManager);
-        console.log("\nConfiguration:");
-        console.log("Deployer has ORGANIZER, SHARIA_COUNCIL, and KYC_ORACLE roles");
-        console.log("Deployer has 1000 voting tokens");
-        console.log("Deployer has DEFAULT_ADMIN_ROLE for initial setup");
-        console.log("\nNext Steps:");
-        console.log("1. Verify contracts on Basescan");
-        console.log("2. Grant organizer roles: dao.grantOrganizerRole(address)");
-        console.log("3. Grant voting power: dao.grantVotingPower(address, amount)");
-        console.log("4. Grant Sharia council roles: dao.grantShariaCouncilRole(address)");
-        console.log("5. Test the IDRX faucet: cast send", address(idrxToken), "\"faucet()\" --rpc-url base_sepolia --private-key $PRIVATE_KEY");
-        console.log("6. [ZAKAT] Propose fallback pools: dao.proposeFallbackPool(pool, ipfsCID)");
-        console.log("7. [ZAKAT] Sharia council approves: dao.vetFallbackPool(pool)");
-        console.log("8. [ZAKAT] Set default fallback pool: dao.setDefaultFallbackPool(pool)");
-        console.log("9. [OPTIONAL] Renounce DEFAULT_ADMIN_ROLE for full decentralization");
-        console.log("\nArchitecture Notes:");
-        console.log("- Fully decentralized: No ADMIN_ROLE, only DEFAULT_ADMIN_ROLE for initial setup");
-        console.log("- Pool creation: Organizer-only (no admin needed after Sharia approval)");
-        console.log("- One non-transferable receipt NFT minted per donation (not per pool)");
-        console.log("- VotingToken (non-transferable ERC20) used for community voting");
-        console.log("- Modular design: ProposalManager, VotingManager, ShariaReviewManager, PoolManager, ZakatEscrowManager");
-        console.log("");
-        console.log("ZakatEscrowManager Features:");
-        console.log("- ZakatCompliant campaigns: 30-day hard limit for distribution (Shafi'i compliance)");
-        console.log("- Grace period: 7 days for Sharia council intervention");
-        console.log("- One-time extension: +14 days (council granted, documented on IPFS)");
-        console.log("- Auto-redistribution: Funds redirected to approved fallback pool if timeout");
-        console.log("- Normal campaigns: No timeout restrictions (Sadaqah/voluntary)");
-        console.log("- Fallback pool approval: Community proposes → Sharia council approves (final)");
-        console.log("================================\n");
     }
 }

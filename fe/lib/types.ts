@@ -47,6 +47,71 @@ export enum VoteSupport {
 }
 
 /**
+ * Milestone Status Enum
+ * Represents the lifecycle state of a milestone
+ */
+export enum MilestoneStatus {
+  Pending = 0,        // Milestone created, waiting for proof submission
+  ProofSubmitted = 1, // Proof uploaded to IPFS, waiting for voting
+  Voting = 2,         // Community voting in progress
+  Approved = 3,       // Vote passed, funds can be withdrawn
+  Rejected = 4,       // Vote failed, needs re-submission
+  Completed = 5,      // Funds withdrawn, milestone complete
+}
+
+/**
+ * Milestone Input Structure
+ * Used when creating a proposal with milestones (user-provided fields only)
+ */
+export interface MilestoneInput {
+  description: string;
+  targetAmount: bigint;
+}
+
+/**
+ * Milestone Structure
+ * Full milestone data from the contract
+ */
+export interface Milestone {
+  milestoneId: bigint;
+  description: string;
+  targetAmount: bigint;
+  proofIPFS: string;
+  status: MilestoneStatus;
+  proofSubmittedAt: bigint;
+  voteStart: bigint;
+  voteEnd: bigint;
+  votesFor: bigint;
+  votesAgainst: bigint;
+  votesAbstain: bigint;
+  releasedAt: bigint;
+}
+
+/**
+ * UI-friendly Milestone Data
+ * Converted from contract Milestone for display purposes
+ */
+export interface MilestoneData {
+  id: string;
+  description: string;
+  targetAmount: string; // Formatted
+  targetAmountRaw: bigint;
+  proofIPFS: string;
+  status: MilestoneStatus;
+  statusLabel: string;
+  proofSubmittedAt: string; // Formatted date
+  voteStart: string; // Formatted date
+  voteEnd: string; // Formatted date
+  votesFor: string;
+  votesAgainst: string;
+  votesAbstain: string;
+  releasedAt: string; // Formatted date
+  isVotingActive: boolean;
+  canSubmitProof: boolean;
+  canWithdraw: boolean;
+}
+
+/**
  * Proposal Structure
  * Represents a proposal in the ZKTCore contract
  */
@@ -153,6 +218,8 @@ export interface CreateProposalParams {
   isEmergency: boolean;
   mockZKKYCProof: string;
   zakatChecklistItems: string[];
+  metadataURI?: string;
+  milestones: { description: string; targetAmount: number }[]; // In IDRX (will be converted to wei)
 }
 
 /**
@@ -339,4 +406,98 @@ export function formatTimestamp(timestamp: number): string {
 export function formatAddress(address: string): string {
   if (!address) return '';
   return `${address.slice(0, 6)}...${address.slice(-4)}`;
+}
+
+/**
+ * Milestone Status Helper Functions
+ */
+export function getMilestoneStatusLabel(status: MilestoneStatus): string {
+  const labels: Record<MilestoneStatus, string> = {
+    [MilestoneStatus.Pending]: 'Pending',
+    [MilestoneStatus.ProofSubmitted]: 'Proof Submitted',
+    [MilestoneStatus.Voting]: 'Voting',
+    [MilestoneStatus.Approved]: 'Approved',
+    [MilestoneStatus.Rejected]: 'Rejected',
+    [MilestoneStatus.Completed]: 'Completed',
+  };
+  return labels[status] || 'Unknown';
+}
+
+export function getMilestoneStatusColor(status: MilestoneStatus): string {
+  const colors: Record<MilestoneStatus, string> = {
+    [MilestoneStatus.Pending]: 'bg-gray-100 text-gray-700 border-gray-300',
+    [MilestoneStatus.ProofSubmitted]: 'bg-blue-100 text-blue-700 border-blue-300',
+    [MilestoneStatus.Voting]: 'bg-yellow-100 text-yellow-700 border-yellow-300',
+    [MilestoneStatus.Approved]: 'bg-green-100 text-green-700 border-green-300',
+    [MilestoneStatus.Rejected]: 'bg-red-100 text-red-700 border-red-300',
+    [MilestoneStatus.Completed]: 'bg-emerald-100 text-emerald-700 border-emerald-300',
+  };
+  return colors[status] || 'bg-gray-100 text-gray-700 border-gray-300';
+}
+
+/**
+ * Convert contract Milestone to UI-friendly MilestoneData
+ */
+export function milestoneToMilestoneData(milestone: Milestone): MilestoneData {
+  const now = BigInt(Math.floor(Date.now() / 1000));
+  const isVotingActive = milestone.status === MilestoneStatus.Voting &&
+    milestone.voteStart <= now &&
+    milestone.voteEnd >= now;
+  const canSubmitProof = milestone.status === MilestoneStatus.Pending ||
+    milestone.status === MilestoneStatus.Rejected;
+  const canWithdraw = milestone.status === MilestoneStatus.Approved;
+
+  return {
+    id: milestone.milestoneId.toString(),
+    description: milestone.description,
+    targetAmount: formatIDRX(milestone.targetAmount),
+    targetAmountRaw: milestone.targetAmount,
+    proofIPFS: milestone.proofIPFS,
+    status: milestone.status,
+    statusLabel: getMilestoneStatusLabel(milestone.status),
+    proofSubmittedAt: milestone.proofSubmittedAt > BigInt(0)
+      ? formatTimestamp(Number(milestone.proofSubmittedAt))
+      : '-',
+    voteStart: milestone.voteStart > BigInt(0)
+      ? formatTimestamp(Number(milestone.voteStart))
+      : '-',
+    voteEnd: milestone.voteEnd > BigInt(0)
+      ? formatTimestamp(Number(milestone.voteEnd))
+      : '-',
+    votesFor: milestone.votesFor.toString(),
+    votesAgainst: milestone.votesAgainst.toString(),
+    votesAbstain: milestone.votesAbstain.toString(),
+    releasedAt: milestone.releasedAt > BigInt(0)
+      ? formatTimestamp(Number(milestone.releasedAt))
+      : '-',
+    isVotingActive,
+    canSubmitProof,
+    canWithdraw,
+  };
+}
+
+/**
+ * Milestone Vote Parameters
+ */
+export interface MilestoneVoteParams {
+  proposalId: number | bigint;
+  milestoneId: number | bigint;
+  support: VoteSupport;
+}
+
+/**
+ * Submit Milestone Proof Parameters
+ */
+export interface SubmitMilestoneProofParams {
+  proposalId: number | bigint;
+  milestoneId: number | bigint;
+  ipfsCID: string;
+}
+
+/**
+ * Withdraw Milestone Funds Parameters
+ */
+export interface WithdrawMilestoneFundsParams {
+  poolId: number | bigint;
+  milestoneId: number | bigint;
 }

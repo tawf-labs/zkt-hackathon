@@ -1,17 +1,19 @@
 "use client";
 
 import React, { useState } from 'react';
-import { LayoutDashboard, TrendingUp, Users, FileText, Settings, Download, Plus, ArrowUpRight, ArrowDownRight, CheckCircle2, DollarSign, Calendar, Loader2, Shield, Clock } from 'lucide-react';
+import { LayoutDashboard, TrendingUp, Users, FileText, Settings, Download, Plus, ArrowUpRight, ArrowDownRight, CheckCircle2, DollarSign, Calendar, Loader2, Shield, Clock, Target, Upload, ExternalLink, Play, XCircle, Wallet } from 'lucide-react';
 import { useAccount } from 'wagmi';
 import { useProposals, useProposalCount } from '@/hooks/useProposals';
 import { usePoolManager, usePool } from '@/hooks/usePoolManager';
-import { ProposalStatus, CampaignType, getProposalStatusLabel, getProposalStatusColor } from '@/lib/types';
+import { useMilestones, useMilestoneActions } from '@/hooks/useMilestones';
+import { ProposalStatus, CampaignType, getProposalStatusLabel, getProposalStatusColor, MilestoneStatus, getMilestoneStatusLabel, getMilestoneStatusColor } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
 import { toast } from '@/hooks/use-toast';
+import { uploadFilesToPinata } from '@/lib/pinata-client';
 
-type SidebarTab = 'overview' | 'proposals' | 'pools' | 'reports' | 'settings';
+type SidebarTab = 'overview' | 'proposals' | 'pools' | 'milestones' | 'reports' | 'settings';
 
 export default function OrganizationDashboard() {
   const { address, isConnected } = useAccount();
@@ -123,6 +125,15 @@ export default function OrganizationDashboard() {
             >
               <DollarSign className="h-4 w-4" />
               Campaign Pools
+            </button>
+            <button
+              onClick={() => setSidebarTab('milestones')}
+              className={`w-full flex items-center gap-2 px-4 py-2 rounded-md ${
+                sidebarTab === 'milestones' ? 'bg-primary text-primary-foreground font-semibold' : 'text-gray-600 hover:bg-gray-100'
+              }`}
+            >
+              <Target className="h-4 w-4" />
+              Milestones
             </button>
             <button
               onClick={() => setSidebarTab('reports')}
@@ -382,6 +393,36 @@ export default function OrganizationDashboard() {
           </>
         )}
 
+        {/* Milestones Tab */}
+        {sidebarTab === 'milestones' && (
+          <>
+            <div className="mb-8">
+              <h1 className="text-3xl font-bold tracking-tight">Milestone Management</h1>
+              <p className="text-black">Submit proof, track voting, and withdraw milestone funds</p>
+            </div>
+
+            <div className="space-y-6">
+              {myProposals.filter(p => p.poolId && p.poolId !== '0').length === 0 ? (
+                <div className="bg-white rounded-xl border border-black shadow-sm p-12 text-center">
+                  <Target className="h-12 w-12 mx-auto mb-4 opacity-50 text-muted-foreground" />
+                  <p className="text-muted-foreground mb-4">No campaigns with milestones yet.</p>
+                  <p className="text-sm text-muted-foreground">Create a proposal with milestones and get it approved to start managing milestones.</p>
+                </div>
+              ) : (
+                myProposals
+                  .filter(p => p.poolId && p.poolId !== '0')
+                  .map((proposal) => (
+                    <MilestoneManagementCard
+                      key={proposal.id}
+                      proposal={proposal}
+                      onRefresh={refetchProposals}
+                    />
+                  ))
+              )}
+            </div>
+          </>
+        )}
+
         {/* Reports Tab */}
         {sidebarTab === 'reports' && (
           <>
@@ -580,6 +621,276 @@ function PoolCard({
         {isLoading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Download className="h-4 w-4 mr-2" />}
         Withdraw Funds
       </Button>
+    </div>
+  );
+}
+
+// Milestone Management Card Component
+function MilestoneManagementCard({
+  proposal,
+  onRefresh
+}: {
+  proposal: any
+  onRefresh: () => void
+}) {
+  const [uploadingMilestoneId, setUploadingMilestoneId] = useState<number | null>(null);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+
+  // Get proposal ID from the proposal (assuming it's the numeric ID)
+  const proposalId = parseInt(proposal.id);
+  const poolId = parseInt(proposal.poolId);
+
+  // Fetch milestones for this proposal
+  const { milestones, isLoading: milestonesLoading, refetch: refetchMilestones } = useMilestones(proposalId);
+
+  // Milestone actions
+  const {
+    submitMilestoneProof,
+    startMilestoneVoting,
+    withdrawMilestoneFunds,
+    isLoading: actionLoading
+  } = useMilestoneActions({
+    onSuccess: () => {
+      refetchMilestones();
+      onRefresh();
+    }
+  });
+
+  // Handle file selection for proof upload
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>, milestoneId: number) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setSelectedFile(file);
+      setUploadingMilestoneId(milestoneId);
+    }
+  };
+
+  // Handle proof submission
+  const handleSubmitProof = async (milestoneId: number) => {
+    if (!selectedFile) {
+      toast({
+        title: "Error",
+        description: "Please select a file to upload",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    try {
+      // Upload to Pinata
+      const [ipfsCID] = await uploadFilesToPinata([selectedFile]);
+      
+      // Submit proof to contract
+      await submitMilestoneProof(proposalId, milestoneId, ipfsCID);
+      
+      setSelectedFile(null);
+      setUploadingMilestoneId(null);
+      
+      toast({
+        title: "Success",
+        description: "Proof submitted successfully!"
+      });
+    } catch (error: any) {
+      console.error("Error submitting proof:", error);
+      toast({
+        title: "Error",
+        description: error?.message || "Failed to submit proof",
+        variant: "destructive"
+      });
+    }
+  };
+
+  // Handle start voting
+  const handleStartVoting = async (milestoneId: number) => {
+    try {
+      await startMilestoneVoting(proposalId, milestoneId);
+    } catch (error) {
+      console.error("Error starting voting:", error);
+    }
+  };
+
+  // Handle withdraw funds
+  const handleWithdraw = async (milestoneId: number) => {
+    try {
+      await withdrawMilestoneFunds(poolId, milestoneId);
+    } catch (error) {
+      console.error("Error withdrawing funds:", error);
+    }
+  };
+
+  if (milestonesLoading) {
+    return (
+      <div className="bg-white rounded-xl border border-black shadow-sm p-6">
+        <div className="flex items-center gap-2">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          <span>Loading milestones...</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (milestones.length === 0) {
+    return (
+      <div className="bg-white rounded-xl border border-black shadow-sm p-6">
+        <div className="flex items-center gap-2 mb-2">
+          <h3 className="font-semibold">{proposal.title}</h3>
+          <span className="text-xs text-muted-foreground">Pool #{proposal.poolId}</span>
+        </div>
+        <p className="text-sm text-muted-foreground">No milestones defined for this campaign.</p>
+      </div>
+    );
+  }
+
+  const completedCount = milestones.filter(m => m.status === MilestoneStatus.Completed).length;
+
+  return (
+    <div className="bg-white rounded-xl border border-black shadow-sm">
+      {/* Header */}
+      <div className="p-6 border-b border-black">
+        <div className="flex items-start justify-between">
+          <div>
+            <h3 className="font-semibold text-lg">{proposal.title}</h3>
+            <p className="text-sm text-muted-foreground">Pool #{proposal.poolId} • Proposal #{proposal.id}</p>
+          </div>
+          <div className="text-right">
+            <div className="text-sm font-medium">{completedCount} / {milestones.length}</div>
+            <div className="text-xs text-muted-foreground">Milestones completed</div>
+          </div>
+        </div>
+        <Progress value={(completedCount / milestones.length) * 100} className="h-2 mt-4" />
+      </div>
+
+      {/* Milestones List */}
+      <div className="p-6 space-y-4">
+        {milestones.map((milestone, idx) => (
+          <div key={idx} className="border border-border rounded-lg p-4 space-y-3">
+            {/* Milestone Header */}
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex-1">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="font-medium">Milestone {idx + 1}</span>
+                  <span className={`text-xs px-2 py-0.5 rounded-full border ${getMilestoneStatusColor(milestone.status)}`}>
+                    {milestone.statusLabel}
+                  </span>
+                </div>
+                <p className="text-sm text-muted-foreground">{milestone.description}</p>
+              </div>
+              <div className="text-right">
+                <span className="font-bold text-primary">{milestone.targetAmount} IDRX</span>
+              </div>
+            </div>
+
+            {/* Proof Link (if submitted) */}
+            {milestone.proofIPFS && (
+              <div className="flex items-center gap-2 text-sm bg-secondary/50 rounded-md p-2">
+                <FileText className="h-4 w-4 text-muted-foreground" />
+                <a
+                  href={`https://gateway.pinata.cloud/ipfs/${milestone.proofIPFS}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-primary hover:underline flex items-center gap-1"
+                >
+                  View Proof <ExternalLink className="h-3 w-3" />
+                </a>
+              </div>
+            )}
+
+            {/* Voting Progress (if in voting state) */}
+            {milestone.status === MilestoneStatus.Voting && (
+              <div className="bg-yellow-50 border border-yellow-200 rounded-md p-3 space-y-2">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="font-medium text-yellow-800">Community Voting in Progress</span>
+                  <span className="text-yellow-600">Ends: {milestone.voteEnd}</span>
+                </div>
+                <div className="flex gap-4 text-sm">
+                  <span className="text-green-600 font-medium">For: {milestone.votesFor}</span>
+                  <span className="text-red-500 font-medium">Against: {milestone.votesAgainst}</span>
+                  <span className="text-gray-500">Abstain: {milestone.votesAbstain}</span>
+                </div>
+              </div>
+            )}
+
+            {/* Actions based on status */}
+            <div className="flex gap-2 pt-2">
+              {/* Pending: Show upload proof button */}
+              {milestone.canSubmitProof && (
+                <div className="flex-1 space-y-2">
+                  {uploadingMilestoneId === idx ? (
+                    <div className="flex gap-2">
+                      <input
+                        type="file"
+                        onChange={(e) => handleFileSelect(e, idx)}
+                        className="flex-1 text-sm file:mr-2 file:py-1 file:px-3 file:rounded-md file:border-0 file:text-sm file:font-medium file:bg-primary file:text-primary-foreground hover:file:bg-primary/90"
+                      />
+                      <Button
+                        size="sm"
+                        onClick={() => handleSubmitProof(idx)}
+                        disabled={!selectedFile || actionLoading}
+                      >
+                        {actionLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Upload'}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          setUploadingMilestoneId(null);
+                          setSelectedFile(null);
+                        }}
+                      >
+                        <XCircle className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ) : (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setUploadingMilestoneId(idx)}
+                      className="w-full"
+                    >
+                      <Upload className="h-4 w-4 mr-2" />
+                      Submit Proof
+                    </Button>
+                  )}
+                </div>
+              )}
+
+              {/* ProofSubmitted: Show start voting button */}
+              {milestone.status === MilestoneStatus.ProofSubmitted && (
+                <Button
+                  size="sm"
+                  onClick={() => handleStartVoting(idx)}
+                  disabled={actionLoading}
+                  className="flex-1"
+                >
+                  {actionLoading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Play className="h-4 w-4 mr-2" />}
+                  Start Voting
+                </Button>
+              )}
+
+              {/* Approved: Show withdraw button */}
+              {milestone.canWithdraw && (
+                <Button
+                  size="sm"
+                  onClick={() => handleWithdraw(idx)}
+                  disabled={actionLoading}
+                  className="flex-1 bg-green-600 hover:bg-green-700"
+                >
+                  {actionLoading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Wallet className="h-4 w-4 mr-2" />}
+                  Withdraw Funds
+                </Button>
+              )}
+
+              {/* Completed: Show completed badge */}
+              {milestone.status === MilestoneStatus.Completed && (
+                <div className="flex-1 flex items-center justify-center gap-2 text-green-600 bg-green-50 rounded-md py-2">
+                  <CheckCircle2 className="h-4 w-4" />
+                  <span className="font-medium text-sm">Completed on {milestone.releasedAt}</span>
+                </div>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
