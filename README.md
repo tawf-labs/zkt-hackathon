@@ -54,7 +54,7 @@ The platform follows a **progressive decentralization** approach, starting with 
 ### Privacy
 - **Private Donations**: Pedersen commitment scheme
 - **ZK-KYC**: Zero-knowledge identity verification (Circom circuits)
-- **Anonymous Options**: Donor privacy while maintaining transparencyFambras
+- **Anonymous Options**: Donor privacy while maintaining transparency
 
 
 ## Architecture
@@ -89,38 +89,133 @@ The platform follows a **progressive decentralization** approach, starting with 
 
 ```
 zkt-hackathon/
-├── fe/                      # Frontend (Next.js 16)
-│   ├── app/                # Next.js App Router pages
-│   ├── components/         # React components
-│   ├── hooks/              # Custom hooks
-│   ├── lib/                # Utilities, ABIs
-│   └── public/             # Static assets
+├── fe/                              # Frontend (Next.js 16.1.1)
+│   ├── app/                         # Next.js App Router
+│   │   ├── campaigns/              # Campaign pages
+│   │   │   ├── page.tsx           # Campaign explorer
+│   │   │   ├── [id]/              # Campaign detail
+│   │   │   └── new/               # Create campaign
+│   │   ├── dashboard/              # Role-based dashboards
+│   │   │   ├── donor/             # Donor dashboard
+│   │   │   ├── organization/      # Org management
+│   │   │   └── auditor/           # Auditor oversight
+│   │   ├── governance/            # DAO voting (page.tsx)
+│   │   ├── api/                   # API routes
+│   │   │   ├── campaigns/         # Campaign endpoints
+│   │   │   ├── certificates/      # Certificate generation
+│   │   │   └── upload-to-pinata/  # IPFS upload
+│   │   ├── contact/               # Contact page
+│   │   ├── explorer/              # Block explorer
+│   │   ├── faucet/                # Token faucet
+│   │   ├── mainnet/               # Mainnet info
+│   │   ├── partners/              # Partner showcase
+│   │   ├── zakat/                 # Zakat calculator
+│   │   ├── layout.tsx             # Root layout
+│   │   └── page.tsx               # Home page
+│   │
+│   ├── components/                  # React components
+│   │   ├── campaigns/              # Campaign-specific
+│   │   │   ├── allocation-progress.tsx
+│   │   │   ├── campaign-map.tsx
+│   │   │   └── campaign-status-badge.tsx
+│   │   ├── donations/              # Donation flow
+│   │   │   └── donation-dialog.tsx
+│   │   ├── landing/                # Landing sections
+│   │   │   ├── badge.tsx
+│   │   │   ├── featured-campaigns.tsx
+│   │   │   ├── hero.tsx
+│   │   │   └── how-it-works.tsx
+│   │   ├── layout/                 # Layout components
+│   │   │   ├── footer.tsx
+│   │   │   └── header.tsx
+│   │   ├── providers/              # Context providers
+│   │   │   ├── currency-provider.tsx
+│   │   │   ├── language-provider.tsx
+│   │   │   └── web3-provider.tsx
+│   │   ├── shared/                 # Reusable components
+│   │   │   ├── SearchContext.tsx
+│   │   │   ├── SearchDropdown.tsx
+│   │   │   ├── campaign-card.tsx
+│   │   │   └── lock-allocation-button.tsx
+│   │   ├── wallet/                 # Wallet integration
+│   │   │   ├── client-wallet-wrapper.tsx
+│   │   │   ├── connect-wallet-button.tsx
+│   │   │   └── wallet-context.tsx
+│   │   ├── certificates/            # Certificate components
+│   │   │   └── zakat-certificate-modal.tsx
+│   │   └── ui/                     # Shadcn/ui (50+ components)
+│   │
+│   ├── hooks/                       # Custom React hooks (22 hooks)
+│   │   ├── useCampaign.ts
+│   │   ├── useCampaigns.ts
+│   │   ├── useCampaignEventListener.ts
+│   │   ├── useCampaignStatus.ts
+│   │   ├── useCreateCampaign.ts
+│   │   ├── useCreateCampaignOnChain.ts
+│   │   ├── useCreateCampaignWithSafe.ts
+│   │   ├── useCreateProposal.ts
+│   │   ├── useDonate.ts
+│   │   ├── useDonationReceipts.ts
+│   │   ├── useExplorerTransactions.ts
+│   │   ├── useFallbackPools.ts
+│   │   ├── useIDRXBalance.ts
+│   │   ├── useMilestones.ts
+│   │   ├── usePoolManager.ts
+│   │   ├── usePrivateDonate.ts
+│   │   ├── useProposals.ts
+│   │   ├── useShariaReview.ts
+│   │   ├── useVoting.ts
+│   │   ├── useVotingPower.ts
+│   │   ├── useZakatCertificate.ts
+│   │   └── useZakatLifecycle.ts
+│   │
+│   ├── lib/                         # Utilities & configs
+│   │   ├── abis/                   # Contract ABIs
+│   │   ├── contracts.ts            # Contract addresses
+│   │   ├── constants.ts            # App constants
+│   │   └── utils.ts                # Helper functions
+│   │
+│   ├── public/                      # Static assets
+│   └── package.json
 │
-├── sc/                      # Smart Contracts (Foundry)
+├── sc/                              # Smart Contracts (Foundry)
 │   ├── src/
-│   │   ├── DAO/            # Core DAO contracts
-│   │   │   ├── ZKTCore.sol              # Main orchestrator
-│   │   │   ├── core/                    # Manager contracts
-│   │   │   ├── interfaces/              # Contract interfaces
-│   │   │   └── verifiers/               # ZK verifier contracts
-│   │   └── tokens/          # ERC20/721 tokens
-│   │       ├── MockIDRX.sol              # Test stablecoin
-│   │       ├── DonationReceiptNFT.sol    # Soulbound receipts
-│   │       ├── VotingNFT.sol             # Governance NFT
-│   │       └── OrganizerNFT.sol          # Organizer status NFT
-│   ├── script/            # Deployment scripts
-│   └── test/              # Contract tests
+│   │   ├── DAO/                    # Core DAO contracts
+│   │   │   ├── ZKTCore.sol        # Main orchestrator
+│   │   │   ├── core/              # Manager contracts
+│   │   │   │   ├── EmergencyEscrow.sol
+│   │   │   │   ├── PoolManager.sol
+│   │   │   │   ├── ProposalManager.sol
+│   │   │   │   ├── ShariaReviewManager.sol
+│   │   │   │   ├── VotingManager.sol
+│   │   │   │   └── ZakatEscrow.sol
+│   │   │   ├── interfaces/        # Contract interfaces
+│   │   │   └── verifiers/         # ZK verifier contracts
+│   │   │       └── Groth16Verifier.sol
+│   │   └── tokens/                # ERC20/721 tokens
+│   │       ├── DonationReceiptNFT.sol
+│   │       ├── MockIDRX.sol
+│   │       ├── OrganizerNFT.sol
+│   │       └── VotingToken.sol
+│   ├── script/                     # Deployment scripts
+│   │   └── DeployZKT.s.sol
+│   ├── test/                       # Contract tests
+│   ├── foundry.toml
+│   └── package.json
 │
-├── circuits/                # ZK Circuits (Circom)
-│   ├── ShariaVoteAggregator.circom
-│   └── components/         # Circuit components
+├── circuits/                        # ZK Circuits (Circom)
+│   ├── ShariaVoteAggregator.circom # Main circuit
+│   ├── components/                 # Circuit components
+│   ├── build/                      # Compiled circuit outputs
+│   └── package.json
 │
-├── supabase/                # Backend (Supabase)
+├── supabase/                        # Backend (Supabase)
 │   ├── config.toml
-│   ├── functions/          # Edge functions
-│   └── migrations/         # Database migrations
+│   ├── functions/                  # Edge functions
+│   └── migrations/                 # Database migrations
 │
-└── README.md                # This file
+├── next_work.md                     # Development roadmap
+└── README.md                        # This file
 ```
 
 ## Quick Start
@@ -231,31 +326,210 @@ forge script script/DeployZKT.s.sol \
 
 ## Frontend Application
 
-### Tech Stack
+### Tech Stack & Architecture
 
-- **Next.js 16.1.1** - React framework with App Router
-- **React 19** - UI library
-- **TypeScript 5.x** - Type safety
-- **Tailwind CSS 4.1.9** - Styling
-- **Radix UI + shadcn/ui** - Component library
-- **viem/wagmi 2.x** - Web3 integration
-- **XellarKit** - Multi-wallet support
+| Category | Technology | Version | Purpose |
+|----------|-----------|---------|---------|
+| **Framework** | Next.js | 16.1.1 | App Router, Server Components |
+| **UI Library** | React | 19 | Component rendering |
+| **Language** | TypeScript | 5.x | Type safety |
+| **Styling** | Tailwind CSS | 4.1.9 | Utility-first CSS with custom theme |
+| **Components** | Radix UI + shadcn/ui | Latest | Accessible component primitives |
+| **Icons** | Lucide React | Latest | Icon library |
+| **Web3** | viem/wagmi | 2.x | Ethereum interaction |
+| **Wallets** | XellarKit | Latest | Multi-wallet connection |
+| **Charts** | Recharts | Latest | Data visualization |
+| **Forms** | React Hook Form | Latest | Form state management |
+| **State** | React Context | Built-in | Global state (currency, language) |
+| **Data Fetching** | React Query | Built-in | Server state caching |
 
-### Available Pages
+### Project Structure
 
-| Route | Page | Status |
-|-------|------|--------|
-| `/` | Home | Complete |
-| `/campaigns` | Campaign Explorer | Complete |
-| `/campaigns/[id]` | Campaign Details | Partial |
-| `/campaigns/new` | Create Campaign | Complete |
-| `/governance` | DAO Voting | Complete |
-| `/dashboard/donor` | Donor Dashboard | Complete |
-| `/dashboard/organization` | Organization Dashboard | Partial |
-| `/dashboard/auditor` | Auditor Dashboard | Partial |
-| `/zakat` | Zakat Calculator | Complete |
-| `/faucet` | Token Faucet | Complete |
-| `/explorer` | Block Explorer | Complete |
+```
+fe/
+├── app/                          # Next.js App Router
+│   ├── campaigns/               # Campaign pages
+│   │   ├── page.tsx            # Campaign explorer
+│   │   ├── [id]/               # Campaign detail view
+│   │   └── new/                # Campaign creation form
+│   ├── dashboard/              # Role-based dashboards
+│   │   ├── donor/              # Donor dashboard
+│   │   ├── organization/       # Org management
+│   │   └── auditor/            # Auditor oversight
+│   ├── governance/             # DAO voting interface
+│   ├── api/                    # API routes
+│   │   ├── campaigns/          # Campaign data endpoints
+│   │   ├── certificates/       # Certificate generation
+│   │   └── upload-to-pinata/   # IPFS upload
+│   └── layout.tsx              # Root layout with providers
+│
+├── components/                  # React components
+│   ├── campaigns/               # Campaign-specific components
+│   │   ├── campaign-card.tsx
+│   │   ├── campaign-map.tsx
+│   │   ├── allocation-progress.tsx
+│   │   └── campaign-status-badge.tsx
+│   ├── donations/               # Donation flow components
+│   │   └── donation-dialog.tsx  # Two-step donation UI
+│   ├── landing/                 # Landing page sections
+│   │   ├── hero.tsx
+│   │   ├── featured-campaigns.tsx
+│   │   ├── how-it-works.tsx
+│   │   └── badge.tsx
+│   ├── layout/                  # Layout components
+│   │   ├── header.tsx           # Navigation + wallet connect
+│   │   └── footer.tsx           # Site footer
+│   ├── providers/               # Context providers
+│   │   ├── web3-provider.tsx    # Web3 connection
+│   │   ├── currency-provider.tsx # Currency conversion
+│   │   └── language-provider.tsx # i18n support
+│   ├── shared/                  # Reusable components
+│   │   ├── SearchContext.tsx    # Search state
+│   │   ├── SearchDropdown.tsx   # Search UI
+│   │   └── lock-allocation-button.tsx
+│   ├── wallet/                  # Wallet integration
+│   │   ├── client-wallet-wrapper.tsx
+│   │   ├── connect-wallet-button.tsx
+│   │   └── wallet-context.tsx
+│   ├── certificates/            # Certificate components
+│   │   └── zakat-certificate-modal.tsx
+│   └── ui/                      # Shadcn/ui components (50+)
+│       ├── button.tsx
+│       ├── card.tsx
+│       ├── dialog.tsx
+│       ├── form.tsx
+│       └── ...                  # Additional UI primitives
+│
+├── hooks/                       # Custom React hooks
+│   ├── useCampaigns.ts          # Fetch all campaigns
+│   ├── useCampaign.ts           # Single campaign data
+│   ├── useDonate.ts             # Public donations
+│   ├── usePrivateDonate.ts      # Private donations
+│   ├── useIDRXBalance.ts        # Token balance
+│   ├── useVoting.ts             # Governance voting
+│   ├── useProposals.ts          # DAO proposals
+│   ├── useCreateCampaign.ts     # Campaign creation
+│   ├── useDonationReceipts.ts   # NFT receipts
+│   ├── useZakatCertificate.ts   # Certificate generation
+│   ├── useMilestones.ts         # Milestone management
+│   ├── useShariaReview.ts       # Council review
+│   ├── useVotingPower.ts        # Vote calculation
+│   └── useZakatLifecycle.ts     # Zakat deadlines
+│
+├── lib/                         # Utilities & configs
+│   ├── utils.ts                 # Helper functions
+│   ├── constants.ts             # App constants
+│   ├── abis/                    # Contract ABIs
+│   └── contracts.ts             # Contract addresses
+│
+└── data/                        # Static data
+    └── mockData.ts              # Development mock data
+```
+
+### Pages Reference
+
+| Route | Page | Status | Description |
+|-------|------|--------|-------------|
+| `/` | Home | Complete | Landing page with hero, featured campaigns, how it works |
+| `/campaigns` | Explorer | Complete | Browse/search all campaigns with filters |
+| `/campaigns/[id]` | Detail | Partial | Single campaign view with milestones, donations |
+| `/campaigns/new` | Create | Complete | Campaign creation form with metadata upload |
+| `/governance` | DAO Voting | Complete | Community governance, proposal voting |
+| `/dashboard/donor` | Donor Dashboard | Complete | Donation history, governance rights, certificates |
+| `/dashboard/organization` | Org Dashboard | Partial | Campaign management, fund withdrawal |
+| `/dashboard/auditor` | Auditor Dashboard | Partial | Verification oversight, reviews |
+| `/zakat` | Calculator | Complete | Zakat calculation tool |
+| `/faucet` | Token Faucet | Complete | Test token claims (IDRX) |
+| `/explorer` | Block Explorer | Complete | Transaction history, contract interactions |
+| `/contact` | Contact | Complete | Contact form |
+| `/partners` | Partners | Complete | Partner showcase |
+| `/mainnet` | Mainnet | Complete | Mainnet deployment information |
+
+### Key Components
+
+#### Layout Components
+- **Header** (`components/layout/header.tsx`) - Site navigation, wallet connection, mobile menu
+- **Footer** (`components/layout/footer.tsx`) - Site links, social media, legal
+
+#### Campaign Components
+- **CampaignCard** (`components/shared/campaign-card.tsx`) - Campaign preview with status, progress
+- **CampaignMap** (`components/campaigns/campaign-map.tsx`) - Geographic campaign visualization
+- **AllocationProgress** (`components/campaigns/allocation-progress.tsx`) - Fund allocation display
+- **StatusBadge** (`components/campaigns/campaign-status-badge.tsx`) - Campaign status indicator
+
+#### Donation Components
+- **DonationDialog** (`components/donations/donation-dialog.tsx`) - Two-step donation flow:
+  1. Approve token spending
+  2. Execute donation transaction
+
+#### Landing Components
+- **Hero** (`components/landing/hero.tsx`) - Main hero section with CTA
+- **FeaturedCampaigns** (`components/landing/featured-campaigns.tsx`) - Highlighted campaigns
+- **HowItWorks** (`components/landing/how-it-works.tsx`) - Process explanation
+- **Badge** (`components/landing/badge.tsx`) - Trust indicators
+
+#### Shared Components
+- **SearchContext** (`components/shared/SearchContext.tsx`) - Global search state
+- **SearchDropdown** (`components/shared/SearchDropdown.tsx`) - Search UI with results
+- **LockAllocationButton** (`components/shared/lock-allocation-button.tsx`) - Fund locking control
+
+#### Provider Components
+- **Web3Provider** (`components/providers/web3-provider.tsx`) - Wallet connection, wagmi config
+- **CurrencyProvider** (`components/providers/currency-provider.tsx`) - Multi-currency support
+- **LanguageProvider** (`components/providers/language-provider.tsx`) - i18n context
+
+### Custom Hooks Reference
+
+| Hook | Purpose | Returns |
+|------|---------|---------|
+| `useCampaigns()` | Fetch all campaigns from contract | `Campaign[]` |
+| `useCampaign(id)` | Single campaign data with milestones | `Campaign` |
+| `useDonate()` | Public donation transactions | `donate()` function |
+| `usePrivateDonate()` | Private donation with commitment | `donatePrivate()` function |
+| `useIDRXBalance(address)` | Token balance for address | `balance` string |
+| `useVoting()` | Governance vote casting | `castVote()` function |
+| `useProposals()` | Fetch DAO proposals | `Proposal[]` |
+| `useCreateCampaign()` | Campaign creation flow | `createCampaign()` function |
+| `useDonationReceipts(address)` | NFT receipts for donor | `Receipt[]` |
+| `useZakatCertificate()` | Certificate PDF generation | `generateCertificate()` function |
+| `useMilestones(poolId)` | Campaign milestone data | `Milestone[]` |
+| `useShariaReview()` | Council review operations | Review functions |
+| `useVotingPower(address)` | Calculate governance votes | Vote count |
+| `useZakatLifecycle(poolId)` | Zakat deadline tracking | Lifecycle status |
+
+### Web3 Integration
+
+#### Wallet Providers
+- **Primary**: XellarKit (multi-wallet aggregator)
+- **Supported**:
+  - MetaMask
+  - Coinbase Wallet
+  - WalletConnect
+  - Safe (multisig)
+  - XellarKit-compatible wallets
+
+#### Network Configuration
+- **Network**: Base Sepolia (enforced, auto-switch prompt)
+- **RPC URL**: `https://sepolia.base.org`
+- **Chain ID**: 84532
+
+#### Token Flow (Two-Step Donation)
+1. **Approval**: User approves IDRX spending allowance
+2. **Donation**: User executes donation with approved amount
+
+#### Real-Time Features
+- Balance tracking via `useIDRXBalance`
+- Transaction status updates
+- Block confirmation monitoring
+
+### API Routes
+
+| Route | Method | Purpose |
+|-------|--------|---------|
+| `/api/campaigns` | GET | Fetch all campaigns from smart contract |
+| `/api/campaigns/[id]` | GET | Campaign details with milestones |
+| `/api/upload-to-pinata` | POST | Upload metadata to IPFS via Pinata |
+| `/api/certificates` | POST | Generate Zakat certificate PDF |
 
 ### Environment Variables
 
@@ -266,11 +540,20 @@ Create `fe/.env`:
 NEXT_PUBLIC_WALLET_CONNECT_PROJECT_ID=your_project_id
 NEXT_PUBLIC_RPC_URL=https://sepolia.base.org
 
+# Contract Addresses (Base Sepolia)
+NEXT_PUBLIC_ZKT_CORE_ADDRESS=0xacc7d3d90ba0e06dfa3ddd702214ed521726efdd
+NEXT_PUBLIC_IDRX_ADDRESS=0xb3970735048e6db24028eb383d458e16637cbc7a
+NEXT_PUBLIC_DONATION_RECEIPT_NFT_ADDRESS=0x3d40bad0a1ac627d59bc142ded202e08e002b6a7
+NEXT_PUBLIC_VOTING_TOKEN_ADDRESS=0x4461b304f0ce2a879c375ea9e5124be8bc73522d
+
 # API Configuration
 NEXT_PUBLIC_API_URL=http://localhost:3000/api
 NEXT_PUBLIC_APP_URL=http://localhost:3000
 
-# Supabase (if using)
+# IPFS / Pinata
+NEXT_PUBLIC_PINATA_JWT=your_pinata_jwt
+
+# Supabase (optional)
 NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_key
 
@@ -278,13 +561,29 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_key
 NEXT_PUBLIC_VERCEL_ANALYTICS_ID=your_analytics_id
 ```
 
-### Wallet Support
+### Development Commands
 
-- MetaMask
-- WalletConnect
-- Coinbase Wallet
-- Safe (multisig)
-- XellarKit-compatible wallets
+```bash
+cd fe
+
+# Install dependencies
+pnpm install
+
+# Start development server
+pnpm dev
+
+# Build for production
+pnpm build
+
+# Run production build
+pnpm start
+
+# Lint code
+pnpm lint
+
+# Type check
+pnpm tsc --noEmit
+```
 
 ## ZK Circuits
 
