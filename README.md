@@ -1,4 +1,4 @@
-# ZKT Hackathon - ZK Zakat DAO
+# ZKT - Zakat On Chain 
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Solidity](https://img.shields.io/badge/Solidity-0.8.31-blue.svg)](https://soliditylang.org/)
@@ -54,7 +54,8 @@ The platform follows a **progressive decentralization** approach, starting with 
 ### Privacy
 - **Private Donations**: Pedersen commitment scheme
 - **ZK-KYC**: Zero-knowledge identity verification (Circom circuits)
-- **Anonymous Options**: Donor privacy while maintaining transparency
+- **Anonymous Options**: Donor privacy while maintaining transparencyFambras
+
 
 ## Architecture
 
