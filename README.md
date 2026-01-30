@@ -280,15 +280,22 @@ npm run build
 
 | Contract | Address | Purpose |
 |----------|---------|---------|
-| **ZKTCore** | `0xacc7d3d90ba0e06dfa3ddd702214ed521726efdd` | Main orchestrator |
-| **MockIDRX** | `0xb3970735048e6db24028eb383d458e16637cbc7a` | Test ERC20 with faucet |
-| **DonationReceiptNFT** | `0x3d40bad0a1ac627d59bc142ded202e08e002b6a7` | Soulbound receipts |
-| **VotingToken** | `0x4461b304f0ce2a879c375ea9e5124be8bc73522d` | Governance token |
+| **ZKTCore** | `0x86ceb44b46681a22ba32f8e8b4c10e50eeb50df6` | Main orchestrator |
+| **ProposalManager** | `0x5d05133f9de9892688831613c0a3cb80b4cb2d22` | Proposal lifecycle management |
+| **VotingManager** | `0x44e228196549d5276452fe3648a005c25589e615` | Community voting |
+| **ShariaReviewManager** | `0xc378d519c27b5be6563cd2f318611b7729a13761` | Sharia council review |
+| **PoolManager** | `0xca149c6ff741702d12e5926b6d09322eb80f86d6` | Normal campaign pools |
+| **ZakatEscrowManager** | `0xb7922a57efb7af13733de3e3130ab6ed2a265983` | Zakat campaign pools (30-day timeout) |
+| **MilestoneManager** | `0x7e91090c0c3b5e7e1e2dafad9da9ebceed438f84` | Milestone management |
+| **MockIDRX** | `0x06317b6009e39dbcd49d6654e08363fdc17e88a9` | Test ERC20 with faucet |
+| **DonationReceiptNFT** | `0x6d09c766c606519c5eb71cd03ac7c450fc14bb72` | Soulbound receipts |
+| **VotingToken** (vZKT) | `0xa7ff9fd09ed70c174ae9cb580fb6b31325869a05` | Governance NFT (tiered voting) |
+| **OrganizerNFT** | See ZKTCore | KYC'd organizer status |
 
 ### Key Contract Functions
 
 ```solidity
-// Campaign Creation
+// ========== Campaign Creation ==========
 function createProposal(
     string memory title,
     string memory description,
@@ -296,19 +303,54 @@ function createProposal(
     bool isEmergency,
     bytes32 mockZKKYCProof,
     string[] memory zakatChecklistItems,
-    string memory metadataURI
+    string memory metadataURI,                    // IPFS URI with full campaign metadata
+    MilestoneInput[] memory milestoneInputs       // Optional milestone definitions
 ) external returns (uint256 proposalId);
 
-// Voting
+// ========== KYC Management ==========
+function updateKYCStatus(uint256 proposalId, KYCStatus newStatus, string notes) external;
+// KYCStatus: NotRequired=0, Pending=1, Verified=2, Rejected=3
+
+// ========== Voting ==========
 function castVote(uint256 proposalId, uint8 support) external;
-// 0 = against, 1 = for, 2 = abstain
+// support: 0 = against, 1 = for, 2 = abstain
 
-// Donations
-function donate(uint256 poolId, uint256 amount, string memory metadataURI) external;
-function donatePrivate(uint256 poolId, uint256 amount, bytes32 commitment, string memory metadataURI) external;
+function finalizeCommunityVote(uint256 proposalId) external;
+function submitForCommunityVote(uint256 proposalId) external;
 
-// Fund Withdrawal
-function withdrawFunds(uint256 poolId) external;
+// ========== Sharia Council Review ==========
+function reviewProposal(
+    uint256 bundleId,
+    uint256 proposalId,
+    bool approved,
+    CampaignType campaignType,
+    bytes32 mockZKReviewProof
+) external;
+
+function finalizeShariaBundle(uint256 bundleId) external;
+// CampaignType: Normal=0, ZakatCompliant=1, Emergency=2
+
+// ========== Pool Creation ==========
+function createCampaignPool(uint256 proposalId, address fallbackPool) external returns (uint256);
+
+// ========== Donations ==========
+function donate(uint256 poolId, uint256 amount, string memory ipfsCID) external;
+function donatePrivate(uint256 poolId, uint256 amount, bytes32 commitment, string memory ipfsCID) external;
+
+// ========== Fund Withdrawal ==========
+function withdrawFunds(uint256 poolId) external;              // For non-milestone campaigns
+function withdrawMilestoneFunds(uint256 poolId, uint256 milestoneId) external; // For milestone campaigns
+
+// ========== Zakat Timeout Management ==========
+function checkZakatTimeout(uint256 poolId) external;
+function councilExtendZakatDeadline(uint256 poolId, string reasoning) external;
+function executeZakatRedistribution(uint256 poolId) external;
+
+// ========== Milestone Management ==========
+function submitMilestoneProof(uint256 proposalId, uint256 milestoneId, string memory ipfsCID) external;
+function startMilestoneVoting(uint256 proposalId, uint256 milestoneId) external;
+function voteMilestone(uint256 proposalId, uint256 milestoneId, uint8 support) external;
+function finalizeMilestoneVote(uint256 proposalId, uint256 milestoneId) external;
 ```
 
 ### Deploying Contracts
@@ -323,6 +365,40 @@ forge script script/DeployZKT.s.sol \
   --verify \
   -vvvv
 ```
+
+### Frontend-Smart Contract Integration
+
+The frontend (`fe/`) is fully integrated with the smart contracts via:
+
+1. **ABI Definitions** (`fe/lib/abi.ts`): Contains all contract ABIs and deployed addresses
+2. **TypeScript Types** (`fe/lib/types.ts`): Enums and interfaces matching Solidity structs
+3. **React Hooks** (`fe/hooks/`): Custom hooks for contract interactions
+
+#### Critical Enum Mappings (Must Match Contract)
+
+| TypeScript Enum | Values | Contract Location |
+|-----------------|--------|-------------------|
+| `ProposalStatus` | Draft=0, CommunityVote=1, ... | `IProposalManager.sol` |
+| `KYCStatus` | NotRequired=0, Pending=1, Verified=2, Rejected=3 | `IProposalManager.sol` |
+| `CampaignType` | Normal=0, ZakatCompliant=1, Emergency=2 | `IProposalManager.sol` |
+| `MilestoneStatus` | Pending=0, ProofSubmitted=1, Voting=2, ... | `IProposalManager.sol` |
+| `VoteSupport` | Against=0, For=1, Abstain=2 | Voting functions |
+
+#### Key Integration Points
+
+| Feature | Hook | Contract Function |
+|---------|------|-------------------|
+| Create Proposal | `useCreateProposal` | `createProposal()` with milestones |
+| Vote | `useVoting` | `castVote()`, `finalizeCommunityVote()` |
+| Donate | `useDonate` | `donate()`, `donatePrivate()` |
+| Milestones | `useMilestones` | `submitMilestoneProof()`, `voteMilestone()` |
+| Sharia Review | `useShariaReview` | `reviewProposal()`, `finalizeShariaBundle()` |
+| Zakat Lifecycle | `useZakatLifecycle` | `checkZakatTimeout()`, `executeRedistribution()` |
+
+**Important**: When updating smart contracts, always ensure:
+1. TypeScript enum values match Solidity enum values exactly
+2. Function signatures in hooks match contract function signatures
+3. All new contract functions are added to `ZKTCoreABI` in `abi.ts`
 
 ## Frontend Application
 
@@ -541,10 +617,16 @@ NEXT_PUBLIC_WALLET_CONNECT_PROJECT_ID=your_project_id
 NEXT_PUBLIC_RPC_URL=https://sepolia.base.org
 
 # Contract Addresses (Base Sepolia)
-NEXT_PUBLIC_ZKT_CORE_ADDRESS=0xacc7d3d90ba0e06dfa3ddd702214ed521726efdd
-NEXT_PUBLIC_IDRX_ADDRESS=0xb3970735048e6db24028eb383d458e16637cbc7a
-NEXT_PUBLIC_DONATION_RECEIPT_NFT_ADDRESS=0x3d40bad0a1ac627d59bc142ded202e08e002b6a7
-NEXT_PUBLIC_VOTING_TOKEN_ADDRESS=0x4461b304f0ce2a879c375ea9e5124be8bc73522d
+NEXT_PUBLIC_ZKT_CORE_ADDRESS=0x86ceb44b46681a22ba32f8e8b4c10e50eeb50df6
+NEXT_PUBLIC_IDRX_ADDRESS=0x06317b6009e39dbcd49d6654e08363fdc17e88a9
+NEXT_PUBLIC_DONATION_RECEIPT_NFT_ADDRESS=0x6d09c766c606519c5eb71cd03ac7c450fc14bb72
+NEXT_PUBLIC_VOTING_TOKEN_ADDRESS=0xa7ff9fd09ed70c174ae9cb580fb6b31325869a05
+NEXT_PUBLIC_PROPOSAL_MANAGER_ADDRESS=0x5d05133f9de9892688831613c0a3cb80b4cb2d22
+NEXT_PUBLIC_VOTING_MANAGER_ADDRESS=0x44e228196549d5276452fe3648a005c25589e615
+NEXT_PUBLIC_SHARIA_REVIEW_MANAGER_ADDRESS=0xc378d519c27b5be6563cd2f318611b7729a13761
+NEXT_PUBLIC_POOL_MANAGER_ADDRESS=0xca149c6ff741702d12e5926b6d09322eb80f86d6
+NEXT_PUBLIC_ZAKAT_ESCROW_MANAGER_ADDRESS=0xb7922a57efb7af13733de3e3130ab6ed2a265983
+NEXT_PUBLIC_MILESTONE_MANAGER_ADDRESS=0x7e91090c0c3b5e7e1e2dafad9da9ebceed438f84
 
 # API Configuration
 NEXT_PUBLIC_API_URL=http://localhost:3000/api

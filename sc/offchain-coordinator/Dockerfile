@@ -22,6 +22,15 @@ COPY --from=builder /app /app
 # Create data directory for LevelDB
 RUN mkdir -p /app/data
 
+# Create circuits directory (for volume mount or built-in files)
+RUN mkdir -p /app/circuits
+
+# Optionally copy circuit files if they exist (for self-contained image)
+# Uncomment these lines if you want circuits built into the image
+# COPY circuits/ShariaVoteAggregator.wasm /app/circuits/
+# COPY circuits/sharia_0000.zkey /app/circuits/
+# COPY circuits/verification_key.json /app/circuits/
+
 # Expose port
 EXPOSE 3000
 
@@ -30,7 +39,7 @@ ENV NODE_ENV=production
 ENV PORT=3000
 
 # Health check
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
   CMD node -e "require('http').get('http://localhost:3000/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"
 
 # Start the application

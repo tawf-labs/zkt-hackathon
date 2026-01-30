@@ -92,6 +92,11 @@ export const useCreateProposal = (options?: UseCreateProposalOptions) => {
             params.isEmergency,
             params.mockZKKYCProof || '',
             params.zakatChecklistItems,
+            params.metadataURI || '',
+            params.milestones?.map(m => ({
+              description: m.description,
+              targetAmount: parseIDRX(m.targetAmount),
+            })) || [],
           ],
         });
 

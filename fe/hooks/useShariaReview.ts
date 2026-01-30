@@ -12,6 +12,15 @@ interface UseShariaReviewOptions {
 }
 
 /**
+ * Groth16 ZK Proof structure
+ */
+export interface Groth16Proof {
+  pi_a: [bigint, bigint];
+  pi_b: [[bigint, bigint], [bigint, bigint]];
+  pi_c: [bigint, bigint];
+}
+
+/**
  * Get Sharia review bundle info (if bundles are implemented)
  */
 export function useShariaBundle(bundleId: number | bigint) {
@@ -295,9 +304,9 @@ export const useShariaReview = (options?: UseShariaReviewOptions) => {
     try {
       // Get the bundle (placeholder logic used here, ideally fetch from contract)
       const bundleId = await getBundleByProposalId(proposalId);
-      
+
       // Default to ZakatCompliant for now if not specified in this wrapper
-      const campaignType = CampaignType.ZakatCompliant; 
+      const campaignType = CampaignType.ZakatCompliant;
 
       return await reviewProposal(bundleId, proposalId, approved, campaignType, mockZKReviewProof);
     } catch (error: any) {
@@ -311,11 +320,203 @@ export const useShariaReview = (options?: UseShariaReviewOptions) => {
     }
   }, [getBundleByProposalId, reviewProposal]);
 
+  /**
+   * Submit a ZK proof for Sharia council approval (permissionless)
+   * @param bundleId Bundle being reviewed
+   * @param proposalId Proposal being reviewed
+   * @param approvalCount Number of approve votes from Sharia council
+   * @param campaignType Type of campaign (ZakatCompliant, Normal, Emergency)
+   * @param proof Groth16 ZK proof structure
+   */
+  const submitShariaProof = useCallback(async (
+    bundleId: number | bigint,
+    proposalId: number | bigint,
+    approvalCount: number | bigint,
+    campaignType: CampaignType,
+    proof: Groth16Proof
+  ) => {
+    if (!isConnected || !address) {
+      const error = new Error('Wallet not connected');
+      toast({
+        title: 'Error',
+        description: 'Please connect your wallet first',
+        variant: 'destructive',
+      });
+      options?.onError?.(error);
+      return null;
+    }
+
+    setIsLoading(true);
+
+    try {
+      console.log('Submitting ZK proof for Sharia review:', {
+        bundleId: bundleId.toString(),
+        proposalId: proposalId.toString(),
+        approvalCount: approvalCount.toString(),
+        campaignType: getCampaignTypeLabel(campaignType),
+        proof,
+      });
+
+      const hash = await writeContractAsync({
+        address: CONTRACT_ADDRESSES.ZKTCore,
+        abi: ZKTCoreABI,
+        functionName: 'submitShariaReviewProof',
+        args: [
+          BigInt(bundleId),
+          BigInt(proposalId),
+          BigInt(approvalCount),
+          campaignType,
+          proof,
+        ],
+      });
+
+      toast({
+        title: 'ZK Proof Verified! ✅',
+        description: `Sharia proof for proposal ${proposalId} has been verified and recorded.`,
+      });
+
+      options?.onSuccess?.(hash);
+
+      return { txHash: hash };
+
+    } catch (error: any) {
+      console.error('Error submitting ZK proof:', error);
+
+      let errorMessage = 'Failed to submit ZK proof';
+      if (error?.message?.includes('user rejected')) {
+        errorMessage = 'Transaction rejected by user';
+      } else if (error?.message?.includes('Invalid proof')) {
+        errorMessage = 'Invalid ZK proof. Please check your proof generation.';
+      } else if (error?.message?.includes('Proof already used')) {
+        errorMessage = 'This proof has already been used (replay protection).';
+      } else if (error?.message?.includes('Proof already verified')) {
+        errorMessage = 'A verified proof already exists for this proposal.';
+      } else if (error?.message) {
+        errorMessage = error.message;
+      }
+
+      toast({
+        title: 'Proof Submission Failed',
+        description: errorMessage,
+        variant: 'destructive',
+      });
+
+      options?.onError?.(error);
+      return null;
+
+    } finally {
+      setIsLoading(false);
+    }
+  }, [isConnected, address, writeContractAsync, options]);
+
+  /**
+   * Batch submit ZK proofs for multiple proposals
+   */
+  const batchSubmitShariaProofs = useCallback(async (
+    bundleId: number | bigint,
+    proposalIds: (number | bigint)[],
+    approvalCounts: (number | bigint)[],
+    campaignTypes: CampaignType[],
+    proofs: Groth16Proof[]
+  ) => {
+    if (!isConnected || !address) {
+      const error = new Error('Wallet not connected');
+      toast({
+        title: 'Error',
+        description: 'Please connect your wallet first',
+        variant: 'destructive',
+      });
+      options?.onError?.(error);
+      return null;
+    }
+
+    if (proposalIds.length !== approvalCounts.length ||
+        proposalIds.length !== campaignTypes.length ||
+        proposalIds.length !== proofs.length) {
+      toast({
+        title: 'Invalid Input',
+        description: 'All arrays must have the same length',
+        variant: 'destructive',
+      });
+      return null;
+    }
+
+    setIsLoading(true);
+
+    try {
+      console.log('Batch submitting ZK proofs for Sharia review:', {
+        bundleId: bundleId.toString(),
+        proposalIds: proposalIds.map(id => id.toString()),
+      });
+
+      const hash = await writeContractAsync({
+        address: CONTRACT_ADDRESSES.ZKTCore,
+        abi: ZKTCoreABI,
+        functionName: 'batchSubmitShariaReviewProofs',
+        args: [
+          BigInt(bundleId),
+          proposalIds.map(id => BigInt(id)),
+          approvalCounts.map(c => BigInt(c)),
+          campaignTypes,
+          proofs,
+        ],
+      });
+
+      toast({
+        title: 'Batch Proof Submitted! ✅',
+        description: `ZK proofs for ${proposalIds.length} proposals have been verified.`,
+      });
+
+      options?.onSuccess?.(hash);
+
+      return { txHash: hash };
+
+    } catch (error: any) {
+      console.error('Error batch submitting ZK proofs:', error);
+
+      let errorMessage = 'Failed to submit batch proofs';
+      if (error?.message?.includes('user rejected')) {
+        errorMessage = 'Transaction rejected by user';
+      } else if (error?.message?.includes('Length mismatch')) {
+        errorMessage = 'Array lengths do not match';
+      } else if (error?.message) {
+        errorMessage = error.message;
+      }
+
+      toast({
+        title: 'Batch Proof Failed',
+        description: errorMessage,
+        variant: 'destructive',
+      });
+
+      options?.onError?.(error);
+      return null;
+
+    } finally {
+      setIsLoading(false);
+    }
+  }, [isConnected, address, writeContractAsync, options]);
+
+  /**
+   * Check if a proposal has a verified ZK proof
+   */
+  const hasVerifiedProof = useCallback((
+    bundleId: number | bigint,
+    proposalId: number | bigint
+  ) => {
+    // This would need a read contract call
+    // For now, return a placeholder
+    return false;
+  }, []);
+
   return {
     updateKYCStatus,
     reviewProposal,
     finalizeShariaBundle,
     submitShariaVote,
+    submitShariaProof,
+    batchSubmitShariaProofs,
+    hasVerifiedProof,
     isShariaCouncilMember,
     isKYCOracle,
     getPendingShariaReviews,

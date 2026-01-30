@@ -3,7 +3,7 @@
  *
  * This function:
  * 1. Validates the authenticated council member
- * 2. Forwards the vote to the Phala TEE coordinator
+ * 2. Forwards the vote to the Railway coordinator
  * 3. Records proof events when quorum is reached
  */
 
@@ -11,7 +11,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 // Environment variables (set in Supabase dashboard)
-const PHALA_COORDINATOR_URL = Deno.env.get("PHALA_COORDINATOR_URL") || "";
+const COORDINATOR_URL = Deno.env.get("COORDINATOR_URL") || Deno.env.get("RAILWAY_COORDINATOR_URL") || "";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
@@ -126,10 +126,10 @@ serve(async (req) => {
       });
     }
 
-    // Forward to Phala coordinator
-    const coordinatorUrl = PHALA_COORDINATOR_URL || Deno.env.get("PHALA_COORDINATOR_URL");
+    // Forward to Railway coordinator
+    const coordinatorUrl = COORDINATOR_URL;
     if (!coordinatorUrl) {
-      throw new Error("Coordinator URL not configured");
+      throw new Error("Coordinator URL not configured. Set COORDINATOR_URL or RAILWAY_COORDINATOR_URL in Supabase Edge Functions settings.");
     }
 
     const response = await fetch(`${coordinatorUrl}/vote`, {

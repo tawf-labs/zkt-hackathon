@@ -20,20 +20,44 @@ export enum ProposalStatus {
 /**
  * KYC Status Enum
  * Represents the KYC verification status of a proposal
+ *
+ * IMPORTANT: Values must match smart contract enum in IProposalManager.sol:
+ * NotRequired = 0, Pending = 1, Verified = 2, Rejected = 3
  */
 export enum KYCStatus {
-  Pending = 0,
-  Verified = 1,
-  NotRequired = 2,
+  NotRequired = 0,
+  Pending = 1,
+  Verified = 2,
+  Rejected = 3,
+}
+
+/**
+ * Zakat Checklist Item Enum
+ * Represents the compliance checklist items for Zakat-compliant campaigns
+ *
+ * IMPORTANT: Values must match smart contract enum in IProposalManager.sol:
+ * RecipientsVerified = 0, FundsDistributionPlan = 1, CompliantWithSharia = 2,
+ * TransparencyCommitment = 3, RegularReporting = 4
+ */
+export enum ZakatChecklistItem {
+  RecipientsVerified = 0,
+  FundsDistributionPlan = 1,
+  CompliantWithSharia = 2,
+  TransparencyCommitment = 3,
+  RegularReporting = 4,
 }
 
 /**
  * Campaign Type Enum
- * Represents the type of campaign (Normal vs Zakat Compliant)
+ * Represents the type of campaign
+ *
+ * IMPORTANT: Values must match smart contract enum in IProposalManager.sol:
+ * Normal = 0, ZakatCompliant = 1, Emergency = 2
  */
 export enum CampaignType {
   Normal = 0,
   ZakatCompliant = 1,
+  Emergency = 2,
 }
 
 /**
@@ -287,9 +311,10 @@ export function getProposalStatusColor(status: ProposalStatus): string {
 
 export function getKYCStatusLabel(status: KYCStatus): string {
   const labels: Record<KYCStatus, string> = {
+    [KYCStatus.NotRequired]: 'Not Required',
     [KYCStatus.Pending]: 'Pending',
     [KYCStatus.Verified]: 'Verified',
-    [KYCStatus.NotRequired]: 'Not Required',
+    [KYCStatus.Rejected]: 'Rejected',
   };
   return labels[status] || 'Unknown';
 }
@@ -298,6 +323,7 @@ export function getCampaignTypeLabel(type: CampaignType): string {
   const labels: Record<CampaignType, string> = {
     [CampaignType.Normal]: 'Normal',
     [CampaignType.ZakatCompliant]: 'Zakat Compliant',
+    [CampaignType.Emergency]: 'Emergency',
   };
   return labels[type] || 'Unknown';
 }

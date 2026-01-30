@@ -48,7 +48,7 @@ export default function HomePage() {
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <Link href="/dashboard/organization">
+                <Link href="/organizer">
                   <Button className="w-full" variant="outline">
                     Mulai Organisasi
                   </Button>

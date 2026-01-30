@@ -50,7 +50,7 @@ app.get('/health', async (req, res) => {
     memory: process.memoryUsage(),
     tee: {
       enabled: process.env.TEE === 'true',
-      attested: process.env.TEE === 'true' // Phala sets TEE=true in genuine enclaves
+      attested: process.env.TEE === 'true' // Set TEE=true if running in TEE environment
     },
     council: {
       root: councilManager.getRoot(),

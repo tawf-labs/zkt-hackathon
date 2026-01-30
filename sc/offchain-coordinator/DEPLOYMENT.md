@@ -1,120 +1,380 @@
 # ZK Sharia Coordinator - Deployment Guide
 
-This guide covers deploying the ZK Sharia Council coordinator to Phala Cloud (TEE) and setting up Supabase for authentication and data storage.
+This guide covers deploying the ZK Sharia Council coordinator using Docker. The coordinator can be hosted on any server that supports Docker - including VPS providers, cloud platforms, or bare metal servers.
 
 ---
 
 ## Prerequisites
 
-- Node.js 20+
-- Docker installed
-- Phala Cloud CLI
-- Supabase CLI
+- Docker installed (20.10+)
+- Docker Compose installed (2.0+)
+- Basic Linux server administration knowledge
 - Alchemy API key (for Base Sepolia RPC)
+- A server with at least 1GB RAM
 
 ---
 
-## Phase 1: Dockerize the Coordinator
+## Quick Start (Docker Compose)
 
-### Build Docker Image
+### 1. Prepare the Environment
+
+```bash
+cd sc/offchain-coordinator
+
+# Copy the environment template
+cp .env.example .env
+
+# Edit .env with your values
+nano .env
+```
+
+Required environment variables:
+```bash
+# Blockchain Configuration
+RPC_URL=https://base-sepolia.g.alchemy.com/v2/YOUR_KEY
+PRIVATE_KEY=your_wallet_private_key_here
+DAO_CONTRACT_ADDRESS=0x86ceb44b46681a22ba32f8e8b4c10e50eeb50df6
+
+# Coordinator Configuration
+PORT=3000
+SHARIA_QUORUM=3
+AUTO_PUBLISH=false
+```
+
+### 2. Prepare Circuit Files
+
+Create a `circuits` directory and add your circuit files:
+
+```bash
+mkdir -p circuits
+
+# Copy your circuit files to this directory:
+# - ShariaVoteAggregator.wasm
+# - sharia_0000.zkey
+# - verification_key.json
+```
+
+See [Circuit Compilation](#circuit-compilation) below for instructions on building circuits.
+
+### 3. Start the Service
+
+```bash
+# Build and start with Docker Compose
+docker-compose up -d
+
+# Check logs
+docker-compose logs -f
+
+# Check health
+curl http://localhost:3000/health
+```
+
+### 4. Stop the Service
+
+```bash
+docker-compose down
+```
+
+---
+
+## Bare Docker Deployment
+
+If you prefer not to use Docker Compose:
+
+### Build the Image
 
 ```bash
 cd sc/offchain-coordinator
 docker build -t sharia-zk-coordinator .
 ```
 
-### Test Locally
+### Run the Container
 
 ```bash
-docker run -p 3000:3000 \
-  -e RPC_URL=https://base-sepolia.g.alchemy.com/v2/YOUR_KEY \
-  -e PRIVATE_KEY=your_private_key \
-  -e SHARIA_QUORUM=3 \
+docker run -d \
+  --name sharia-zk-coordinator \
+  --restart unless-stopped \
+  -p 3000:3000 \
+  --env-file .env \
+  -v "$(pwd)/circuits:/app/circuits:ro" \
+  -v "$(pwd)/data:/app/data" \
   sharia-zk-coordinator
 ```
 
-Test the health endpoint:
+### Useful Commands
+
+```bash
+# View logs
+docker logs -f sharia-zk-coordinator
+
+# Restart container
+docker restart sharia-zk-coordinator
+
+# Stop container
+docker stop sharia-zk-coordinator
+
+# Remove container
+docker rm sharia-zk-coordinator
+
+# Execute commands inside container
+docker exec -it sharia-zk-coordinator sh
+```
+
+---
+
+## Production Server Setup
+
+For a production deployment on a Linux VPS, follow these steps:
+
+### 1. Server Requirements
+
+- Ubuntu 20.04+ or Debian 11+ recommended
+- At least 1GB RAM, 2GB recommended
+- 10GB disk space
+- Docker and Docker Compose installed
+
+### 2. Install Docker
+
+```bash
+# Update system
+sudo apt update && sudo apt upgrade -y
+
+# Install Docker
+curl -fsSL https://get.docker.com -o get-docker.sh
+sudo sh get-docker.sh
+
+# Install Docker Compose
+sudo apt install docker-compose-plugin -y
+
+# Add user to docker group (optional, to run docker without sudo)
+sudo usermod -aG docker $USER
+newgrp docker
+```
+
+### 3. Deploy the Application
+
+```bash
+# Clone or copy your project files
+cd /opt
+git clone <your-repo> zkt-hackathon
+cd zkt-hackathon/sc/offchain-coordinator
+
+# Configure environment
+cp .env.example .env
+nano .env
+
+# Create circuits directory
+mkdir -p circuits data
+# Copy your circuit files to circuits/
+
+# Start with Docker Compose
+docker compose up -d
+```
+
+### 4. Set Up nginx Reverse Proxy (Recommended)
+
+For HTTPS and proper domain hosting:
+
+```bash
+# Install nginx
+sudo apt install nginx certbot python3-certbot-nginx -y
+
+# Create nginx config
+sudo nano /etc/nginx/sites-available/sharia-coordinator
+```
+
+Add this configuration (replace `your-domain.com`):
+
+```nginx
+server {
+    listen 80;
+    server_name your-domain.com;
+
+    location / {
+        proxy_pass http://localhost:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_cache_bypass $http_upgrade;
+    }
+}
+```
+
+Enable the site and get SSL certificate:
+
+```bash
+# Enable site
+sudo ln -s /etc/nginx/sites-available/sharia-coordinator /etc/nginx/sites-enabled/
+
+# Test nginx config
+sudo nginx -t
+
+# Restart nginx
+sudo systemctl restart nginx
+
+# Get SSL certificate with Let's Encrypt
+sudo certbot --nginx -d your-domain.com
+```
+
+### 5. Optional: Systemd Service
+
+If you want to manage the container with systemd instead of Docker Compose:
+
+Create `/etc/systemd/system/sharia-coordinator.service`:
+
+```ini
+[Unit]
+Description=ZK Sharia Coordinator
+Requires=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/opt/zkt-hackathon/sc/offchain-coordinator
+ExecStart=/usr/bin/docker compose up -d
+ExecStop=/usr/bin/docker compose down
+TimeoutStartSec=0
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Enable and start:
+
+```bash
+sudo systemctl enable sharia-coordinator
+sudo systemctl start sharia-coordinator
+
+# Check status
+sudo systemctl status sharia-coordinator
+```
+
+---
+
+## Circuit File Management
+
+There are three ways to provide circuit files to the coordinator:
+
+### Option 1: Volume Mount (Recommended)
+
+Mount your local `circuits` directory to the container. This is the default in docker-compose.yml:
+
+```yaml
+volumes:
+  - ./circuits:/app/circuits:ro
+```
+
+**Pros**: Easy to update files, keeps image small
+**Cons**: Must maintain files separately
+
+### Option 2: Build Into Image
+
+Uncomment the COPY lines in Dockerfile to include circuits in the image:
+
+```dockerfile
+COPY circuits/ShariaVoteAggregator.wasm /app/circuits/
+COPY circuits/sharia_0000.zkey /app/circuits/
+COPY circuits/verification_key.json /app/circuits/
+```
+
+**Pros**: Self-contained image, easier deployment
+**Cons**: Larger image size, harder to update circuits
+
+### Option 3: Download on Startup (Advanced)
+
+Create an entrypoint script that downloads circuits from IPFS or a URL on container start.
+
+---
+
+## Circuit Compilation
+
+If you need to compile the circuits from source:
+
+```bash
+# Navigate to circuits directory
+cd circuits
+
+# Install dependencies
+npm install
+
+# Compile circuits
+npm run build
+
+# Copy files to coordinator directory
+cp build/ShariaVoteAggregator_js/ShariaVoteAggregator.wasm ../offchain-coordinator/circuits/
+cp build/sharia_0000.zkey ../offchain-coordinator/circuits/
+cp build/verification_key.json ../offchain-coordinator/circuits/
+```
+
+---
+
+## Verification
+
+### Health Check
+
 ```bash
 curl http://localhost:3000/health
 ```
 
----
-
-## Phase 2: Deploy to Phala Cloud
-
-### Install Phala CLI
-
-```bash
-npm install -g @phala/cloud
+Expected response:
+```json
+{
+  "status": "ok",
+  "timestamp": 1738080000000,
+  "uptime": 60,
+  "environment": "production",
+  "memory": { "rss": 134217728, "heapTotal": 10485760 },
+  "council": {
+    "root": "0x...",
+    "memberCount": 0
+  },
+  "coordinator": {
+    "quorum": 3,
+    "autoPublish": false
+  }
+}
 ```
 
-### Login to Phala
+### View Logs
 
 ```bash
-phala login
-```
+# Docker Compose
+docker-compose logs -f
 
-### Configure Environment
-
-Edit `.env.production` with your values:
-
-```bash
-# Blockchain Configuration
-RPC_URL=https://base-sepolia.g.alchemy.com/v2/YOUR_KEY
-PRIVATE_KEY=<encrypted_via_phala_secrets>
-DAO_CONTRACT_ADDRESS=0x...
-
-# Coordinator Configuration
-PORT=3000
-SHARIA_QUORUM=3
-AUTO_PUBLISH=false
-
-# Circuit Paths (adjust after deployment)
-CIRCUIT_WASM_PATH=/app/circuits/ShariaVoteAggregator.wasm
-CIRCUIT_ZKEY_PATH=/app/circuits/sharia_0000.zkey
-CIRCUIT_VKEY_PATH=/app/circuits/verification_key.json
-
-# Supabase Integration
-SUPABASE_URL=https://xxx.supabase.co
-SUPABASE_ANON_KEY=<encrypted_via_phala_secrets>
-SUPABASE_SERVICE_ROLE_KEY=<encrypted_via_phala_secrets>
-```
-
-### Set Encrypted Secrets
-
-```bash
-# Store private key securely
-phala secrets set PRIVATE_KEY --encrypted
-
-# Store Supabase keys
-phala secrets set SUPABASE_ANON_KEY --encrypted
-phala secrets set SUPABASE_SERVICE_ROLE_KEY --encrypted
-```
-
-### Deploy to Phala
-
-```bash
-phala deploy \
-  --name sharia-zk-coordinator \
-  --docker sharia-zk-coordinator \
-  --env .env.production \
-  --tee \
-  --region us-east
-```
-
-### Monitor Deployment
-
-```bash
-# View logs
-phala logs sharia-zk-coordinator --follow
-
-# Check health
-phala exec sharia-zk-coordinator -- curl -s http://localhost:3000/health
+# Bare Docker
+docker logs -f sharia-zk-coordinator
 ```
 
 ---
 
-## Phase 3: Setup Supabase
+## Security Considerations
+
+### Private Key Storage
+
+- Store private keys in environment variables only
+- Never commit `.env` files to version control
+- Use a separate wallet for coordinator (not your main wallet)
+- Consider using a secrets manager for production (AWS KMS, HashiCorp Vault)
+
+### Access Control
+
+- Use firewall rules to restrict access to port 3000
+- nginx reverse proxy provides HTTPS and basic protection
+- Consider adding authentication middleware for the API
+
+### Updates
+
+- Regularly update the base Docker image (`docker pull node:20-alpine`)
+- Rebuild and redeploy when updating the application
+
+---
+
+## Setup Supabase
 
 ### Create Project
 
@@ -124,6 +384,7 @@ phala exec sharia-zk-coordinator -- curl -s http://localhost:3000/health
 
 ### Run Migration
 
+**Option A: Using Supabase CLI**
 ```bash
 # Install Supabase CLI
 npm install -g supabase
@@ -135,15 +396,14 @@ supabase link --project-ref YOUR_PROJECT_ID
 supabase db push
 ```
 
-Or manually run the SQL in the Supabase SQL Editor:
-- Open SQL Editor in Supabase dashboard
-- Copy contents of `supabase/migrations/001_council.sql`
-- Execute the script
+**Option B: Manual SQL**
+In Supabase dashboard → SQL Editor, run the contents of:
+`supabase/migrations/001_council.sql`
 
 ### Insert Council Members
 
 ```sql
--- Insert council members (in SQL Editor)
+-- Insert council members
 INSERT INTO council_members (address, name, email, is_active)
 VALUES
   ('0x1234...', 'Council Member 1', 'member1@example.com', true),
@@ -151,129 +411,19 @@ VALUES
   ('0x9abc...', 'Council Member 3', 'member3@example.com', true);
 ```
 
-### Configure Environment Variables
-
-In Supabase dashboard → Settings → Edge Functions:
-
-```
-PHALA_COORDINATOR_URL=https://your-coordinator.phala.network
-```
-
----
-
-## Phase 4: Deploy Supabase Edge Functions
-
-### Deploy Vote Function
+### Deploy Supabase Edge Functions
 
 ```bash
 cd supabase
 
 # Deploy the vote function
-supabase functions deploy vote \
-  --no-verify-jwt
+supabase functions deploy vote --no-verify-jwt
 ```
-
-### Get Function URL
 
 The function will be available at:
 ```
 https://YOUR_PROJECT_ID.supabase.co/functions/vote
 ```
-
----
-
-## Phase 5: Configure Frontend
-
-### Frontend Vote Submission
-
-```typescript
-const submitVote = async (
-  bundleId: number,
-  proposalId: number,
-  vote: 0 | 1
-) => {
-  const response = await fetch(
-    'https://YOUR_PROJECT_ID.supabase.co/functions/vote',
-    {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${supabaseAccessToken}`,
-        'Content-Type': 'application/json',
-        'X-Council-Address': councilWalletAddress,
-      },
-      body: JSON.stringify({
-        bundleId,
-        proposalId,
-        vote,
-        signature: await signVote(bundleId, proposalId, vote),
-      }),
-    }
-  );
-
-  return response.json();
-};
-```
-
----
-
-## Phase 6: Circuit Deployment
-
-Before the coordinator can generate proofs, upload the circuit files:
-
-```bash
-# From Phala container or via kubectl
-phala exec sharia-zk-coordinator -- mkdir -p /app/circuits
-
-# Copy circuit files
-phala cp ../../circuits/build/ShariaVoteAggregator_js/ShariaVoteAggregator.wasm \
-  sharia-zk-coordinator:/app/circuits/
-
-phala cp ../../circuits/build/sharia_0000.zkey \
-  sharia-zk-coordinator:/app/circuits/
-
-phala cp ../../circuits/build/verification_key.json \
-  sharia-zk-coordinator:/app/circuits/
-```
-
----
-
-## Phase 7: Health Monitoring
-
-### Coordinator Health Check
-
-```bash
-curl https://your-coordinator.phala.network/health
-```
-
-Expected response:
-```json
-{
-  "status": "ok",
-  "timestamp": 1738080000000,
-  "uptime": 3600,
-  "environment": "production",
-  "memory": { "rss": 134217728, "heapTotal": 10485760 },
-  "tee": {
-    "enabled": true,
-    "attested": true
-  },
-  "council": {
-    "root": "0x...",
-    "memberCount": 3
-  },
-  "coordinator": {
-    "quorum": 3,
-    "autoPublish": false
-  }
-}
-```
-
-### Setup Alerts
-
-Configure alerts in Phala dashboard for:
-- Coordinator downtime
-- High memory usage
-- Failed health checks
 
 ---
 
@@ -291,12 +441,12 @@ Configure alerts in Phala dashboard for:
                              │ Votes (via API)
                              ▼
 ┌─────────────────────────────────────────────────────────────────────┐
-│                      TEE Protected Layer                             │
+│                      Docker Service Layer                           │
 │  ┌──────────────────────────────────────────────────────────────┐  │
-│  │              Phala Cloud (TEE Coordinator)                    │  │
+│  │              Docker Container (coordinator)                   │  │
 │  │  ┌────────────────┐  ┌───────────────┐  ┌─────────────────┐ │  │
 │  │  │ Vote Aggregator│  │ Proof Generator│  │  Private Keys   │ │  │
-│  │  │   (LevelDB)    │  │   (snarkjs)   │  │   (encrypted)   │ │  │
+│  │  │   (LevelDB)    │  │   (snarkjs)   │  │   (env vars)    │ │  │
 │  │  └────────────────┘  └───────┬───────┘  └─────────────────┘ │  │
 │  └───────────────────────────────────┼──────────────────────────┘  │
 └──────────────────────────────────────┼───────────────────────────────┘
@@ -313,60 +463,79 @@ Configure alerts in Phala dashboard for:
 
 ---
 
-## Security Considerations
-
-### Private Key Storage
-- ✅ Private keys stored in Phala encrypted secrets
-- ✅ Never exposed in environment variables
-- ✅ Rotate keys periodically: `phala secrets rotate PRIVATE_KEY`
-
-### TEE Verification
-- ✅ Phala provides attestation that code runs in genuine TEE
-- ✅ Verify attestation before trusting coordinator
-
-### Council Authentication
-- ✅ Supabase Auth for council member access control
-- ✅ RLS policies ensure only active members can vote
-- ✅ Double-voting prevented via database constraints
-
----
-
 ## Cost Estimates
 
 | Service | Monthly Cost |
 |---------|--------------|
-| Phala Cloud (TEE) | ~$20-50 |
-| Supabase Pro | $25/month |
+| VPS (DigitalOcean, Linode, Hetzner) | $5-20 |
+| Supabase Pro | $25/month (or free tier for dev) |
 | Alchemy RPC | Free tier |
-| **Total** | ~$45-75/month |
+| Domain Name | ~$10/year |
+| **Total** | ~$30-45/month |
 
 ---
 
 ## Troubleshooting
 
-### Coordinator Not Starting
+### Service Not Starting
+
 ```bash
-phala logs sharia-zk-coordinator --tail 100
+# Check logs
+docker-compose logs -f
+
+# Verify environment file
+cat .env
+
+# Check if ports are in use
+sudo netstat -tlnp | grep 3000
 ```
 
 ### Proof Generation Failing
-- Check circuit files are uploaded
-- Verify WASM and zkey paths in environment
-- Check memory allocation in Phala config
 
-### Supabase Edge Function Errors
-```bash
-supabase functions logs vote --tail 100
-```
+- Check circuit files are accessible
+- Verify WASM and zkey paths in environment variables
+- Check memory allocation (minimum 512MB recommended)
 
 ### Database Connection Issues
-- Verify `SUPABASE_URL` and `SUPABASE_ANON_KEY`
+
+- Verify `SUPABASE_URL` and `SUPABASE_ANON_KEY` in .env
 - Check RLS policies allow access
+- Test connection: `curl https://your-project.supabase.co`
+
+### Container Keeps Restarting
+
+```bash
+# Check logs for errors
+docker logs sharia-zk-coordinator
+
+# Check resource usage
+docker stats
+
+# Inspect container
+docker inspect sharia-zk-coordinator
+```
+
+---
+
+## Deployment Script
+
+A helper script is provided to simplify deployment:
+
+```bash
+chmod +x deploy.sh
+./deploy.sh
+```
+
+This will guide you through:
+- Building the Docker image
+- Testing locally
+- Deployment options
 
 ---
 
 ## References
 
-- [Phala Cloud Documentation](https://docs.phala.network)
+- [Docker Documentation](https://docs.docker.com)
+- [Docker Compose Documentation](https://docs.docker.com/compose)
 - [Supabase Edge Functions](https://supabase.com/docs/guides/functions)
 - [Base Sepolia Faucet](https://sepoliafaucet.com)
