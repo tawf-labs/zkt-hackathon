@@ -3,6 +3,7 @@
  */
 
 import { buildMerkleTree } from '../utils/merkle.js';
+import crypto from 'crypto';
 
 export class CouncilManager {
   constructor() {
@@ -35,7 +36,6 @@ export class CouncilManager {
    */
   generateCommitment(address, secret) {
     // Simplified: use keccak256 for MVP
-    const crypto = require('crypto');
     const data = address + secret;
     return '0x' + crypto.createHash('sha256').update(data).digest('hex');
   }

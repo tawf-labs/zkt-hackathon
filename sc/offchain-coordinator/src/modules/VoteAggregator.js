@@ -2,7 +2,7 @@
  * VoteAggregator - Manages vote storage and aggregation
  */
 
-import Level from 'level';
+import { Level } from 'level';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -10,7 +10,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 export class VoteAggregator {
   constructor() {
-    this.db = Level(path.join(__dirname, '../../data/votes'), { valueEncoding: 'json' });
+    this.db = new Level(path.join(__dirname, '../../data/votes'), { valueEncoding: 'json' });
   }
 
   /**

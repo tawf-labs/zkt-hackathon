@@ -2,7 +2,7 @@
  * ProofGenerator - Generates Groth16 ZK proofs using snarkjs
  */
 
-import { loadProofAndVerify, groth16FullProve } from 'snarkjs';
+import { groth16 } from 'snarkjs';
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import path from 'path';
@@ -41,7 +41,7 @@ export class ProofGenerator {
     });
 
     // Generate proof using snarkjs
-    const { proof, publicSignals } = await groth16FullProve(
+    const { proof, publicSignals } = await groth16.fullProve(
       circuitInputs,
       this.wasmPath,
       this.zkeyPath
@@ -116,6 +116,6 @@ export class ProofGenerator {
    */
   async verifyProof(proof, publicSignals) {
     const vKey = JSON.parse(readFileSync(this.vkeyPath, 'utf8'));
-    return await loadProofAndVerify(vKey, proof, publicSignals);
+    return await groth16.verify(vKey, publicSignals, proof);
   }
 }
