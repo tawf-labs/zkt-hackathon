@@ -68,7 +68,7 @@ test_local() {
     echo -e "${YELLOW}Waiting for service to start...${NC}"
     sleep 10
 
-    if curl -s http://localhost:3000/health > /dev/null; then
+    if curl -s http://localhost:$PORT/health > /dev/null; then
         echo -e "${GREEN}✓ Local health check passed${NC}"
         echo ""
         echo -e "${BLUE}Service is running at: http://localhost:3000${NC}"
@@ -157,9 +157,9 @@ show_status() {
     fi
 
     echo ""
-    if curl -s http://localhost:3000/health > /dev/null; then
+    if curl -s http://localhost:$PORT/health > /dev/null; then
         echo -e "${GREEN}✓ Service is healthy${NC}"
-        curl -s http://localhost:3000/health | jq . 2>/dev/null || curl -s http://localhost:3000/health
+        curl -s http://localhost:$PORT/health | jq . 2>/dev/null || curl -s http://localhost:$PORT/health
     else
         echo -e "${RED}✗ Service is not responding${NC}"
     fi

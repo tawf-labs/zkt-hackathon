@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma circom 2.0.0;
 
+include "../node_modules/circomlib/circuits/poseidon.circom";
+include "../node_modules/circomlib/circuits/switcher.circom";
+
 /**
  * @title MerkleProof
  * @notice Verifies a Merkle proof using Poseidon hash
@@ -24,22 +27,25 @@ template MerkleProof(treeDepth) {
     signal input pathIndices[treeDepth];
     signal output valid;
 
-    // Import Poseidon from circomlib
-    component poseidon = Poseidon(2);
-
     signal currentLevel[treeDepth + 1];
     currentLevel[0] <== leaf;
 
+    component hash[treeDepth];
+    component switcher[treeDepth];
+
     // Compute root from leaf and path
     for (var i = 0; i < treeDepth; i++) {
-        component hash = Poseidon(2);
+        // Use Switcher to swap based on index
+        switcher[i] = Switcher();
+        switcher[i].L <== currentLevel[i];
+        switcher[i].R <== pathElements[i];
+        switcher[i].sel <== pathIndices[i];
 
-        // If pathIndices[i] == 0, leaf is on left
-        // If pathIndices[i] == 1, leaf is on right
-        hash.inputs[0] <== pathIndices[i] * pathElements[i] + (1 - pathIndices[i]) * currentLevel[i];
-        hash.inputs[1] <== pathIndices[i] * currentLevel[i] + (1 - pathIndices[i]) * pathElements[i];
+        hash[i] = Poseidon(2);
+        hash[i].inputs[0] <== switcher[i].outL;
+        hash[i].inputs[1] <== switcher[i].outR;
 
-        currentLevel[i + 1] <== hash.out;
+        currentLevel[i + 1] <== hash[i].out;
 
         // Ensure path indices are binary
         pathIndices[i] * (pathIndices[i] - 1) === 0;

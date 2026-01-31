@@ -25,7 +25,7 @@ export interface Groth16Proof {
  */
 export function useShariaBundle(bundleId: number | bigint) {
   const { data, isLoading, refetch } = useReadContract({
-    address: CONTRACT_ADDRESSES.ZKTCore,
+    address: CONTRACT_ADDRESSES.ShariaReviewManager,
     abi: ZKTCoreABI,
     functionName: 'getBundle',
     args: [BigInt(bundleId)],

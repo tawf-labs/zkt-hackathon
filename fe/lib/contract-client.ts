@@ -1,6 +1,6 @@
 import { createPublicClient, http, getAddress } from 'viem';
 import { baseSepolia } from 'viem/chains';
-import { CONTRACT_ADDRESSES, ZKTCoreABI } from './abi';
+import { CONTRACT_ADDRESSES, ZKTCoreABI, PoolManagerABI, ProposalManagerABI, ZakatEscrowManagerABI } from './abi';
 
 // Create a public client for reading contract data
 export const publicClient = createPublicClient({
@@ -65,93 +65,179 @@ export async function fetchIPFSMetadata(ipfsURI: string): Promise<CampaignMetada
   }
 }
 
-// Get all campaign pools from contract
+// Get all campaign pools from contract (both Normal and Zakat)
 export async function getAllCampaignPools(): Promise<CampaignData[]> {
   try {
-    // Get pool count
-    const poolCount = await publicClient.readContract({
-      address: getAddress(CONTRACT_ADDRESSES.ZKTCore),
-      abi: ZKTCoreABI,
-      functionName: 'poolCount',
-    }) as bigint;
-
-    const count = Number(poolCount);
     const campaigns: CampaignData[] = [];
 
-    // Fetch each pool
-    for (let i = 1; i <= count; i++) {
-      try {
-        const pool = await publicClient.readContract({
-          address: getAddress(CONTRACT_ADDRESSES.ZKTCore),
-          abi: ZKTCoreABI,
-          functionName: 'getPool',
-          args: [BigInt(i)],
-        }) as any;
+    // 1. Fetch Normal Pools from PoolManager
+    try {
+      const normalPoolCount = await publicClient.readContract({
+        address: getAddress(CONTRACT_ADDRESSES.PoolManager),
+        abi: PoolManagerABI,
+        functionName: 'poolCount',
+      }) as bigint;
 
-        if (!pool || !pool.campaignTitle) continue;
+      const normalCount = Number(normalPoolCount);
 
-        // Get proposal for metadata
-        const proposal = await publicClient.readContract({
-          address: getAddress(CONTRACT_ADDRESSES.ZKTCore),
-          abi: ZKTCoreABI,
-          functionName: 'getProposal',
-          args: [BigInt(pool.proposalId)],
-        }) as any;
+      for (let i = 1; i <= normalCount; i++) {
+        try {
+          const pool = await publicClient.readContract({
+            address: getAddress(CONTRACT_ADDRESSES.PoolManager),
+            abi: PoolManagerABI,
+            functionName: 'getPool',
+            args: [BigInt(i)],
+          }) as any;
 
-        // Default metadata from contract data
-        let metadata: CampaignMetadata = {
-          title: pool.campaignTitle,
-          description: proposal?.description || '',
-          category: pool.campaignType === 1 ? 'Zakat' : 'General',
-          location: 'Indonesia',
-          imageUrls: [],
-          tags: [],
-          organizationName: pool.organizer
-            ? `${pool.organizer.slice(0, 6)}...${pool.organizer.slice(-4)}`
-            : 'Unknown',
-          organizationVerified: pool.campaignType === 1,
-        };
+          if (!pool || !pool.campaignTitle) continue;
+          if (pool.poolId === 0n) continue;
 
-        // Try to fetch IPFS metadata if available
-        if (proposal?.metadataURI && proposal.metadataURI.length > 0) {
-          const ipfsMetadata = await fetchIPFSMetadata(proposal.metadataURI);
-          if (ipfsMetadata) {
-            metadata = { ...metadata, ...ipfsMetadata };
+          const proposal = await publicClient.readContract({
+            address: getAddress(CONTRACT_ADDRESSES.ProposalManager),
+            abi: ProposalManagerABI,
+            functionName: 'getProposal',
+            args: [BigInt(pool.proposalId)],
+          }) as any;
+
+          let metadata: CampaignMetadata = {
+            title: pool.campaignTitle,
+            description: proposal?.description || '',
+            category: 'General',
+            location: 'Indonesia',
+            imageUrls: [],
+            tags: [],
+            organizationName: pool.organizer
+              ? `${pool.organizer.slice(0, 6)}...${pool.organizer.slice(-4)}`
+              : 'Unknown',
+            organizationVerified: false,
+          };
+
+          if (proposal?.metadataURI && proposal.metadataURI.length > 0) {
+            const ipfsMetadata = await fetchIPFSMetadata(proposal.metadataURI);
+            if (ipfsMetadata) {
+              metadata = { ...metadata, ...ipfsMetadata };
+            }
           }
+
+          const fundingGoal = Number(pool.fundingGoal || 0n) / 1e18;
+          const raisedAmount = Number(pool.raisedAmount || 0n) / 1e18;
+          const createdAt = Number(pool.createdAt || 0n);
+          const endTime = createdAt + (90 * 24 * 60 * 60);
+
+          campaigns.push({
+            poolId: i,
+            proposalId: Number(pool.proposalId),
+            title: metadata.title,
+            description: metadata.description,
+            category: metadata.category,
+            location: metadata.location,
+            goal: fundingGoal,
+            organizationName: metadata.organizationName,
+            organizationVerified: metadata.organizationVerified,
+            imageUrl: metadata.imageUrls[0] || 'https://images.unsplash.com/photo-1532629345422-7515f3d16bb6?w=500',
+            imageUrls: metadata.imageUrls,
+            tags: metadata.tags,
+            createdAt,
+            endTime,
+            raised: raisedAmount,
+            donors: pool.donors?.length || 0,
+            isActive: pool.isActive || false,
+            isVerified: false,
+            organizer: pool.organizer,
+            campaignType: 0,
+            metadataURI: proposal?.metadataURI,
+          });
+        } catch (error) {
+          console.error(`Error fetching normal pool ${i}:`, error);
         }
-
-        const fundingGoal = Number(pool.fundingGoal || 0n) / 1e18;
-        const raisedAmount = Number(pool.raisedAmount || 0n) / 1e18;
-        const createdAt = Number(pool.createdAt || 0n);
-        const endTime = createdAt + (90 * 24 * 60 * 60); // 90 days from creation
-
-        campaigns.push({
-          poolId: i,
-          proposalId: Number(pool.proposalId),
-          title: metadata.title,
-          description: metadata.description,
-          category: metadata.category,
-          location: metadata.location,
-          goal: fundingGoal,
-          organizationName: metadata.organizationName,
-          organizationVerified: metadata.organizationVerified,
-          imageUrl: metadata.imageUrls[0] || 'https://images.unsplash.com/photo-1532629345422-7515f3d16bb6?w=500',
-          imageUrls: metadata.imageUrls,
-          tags: metadata.tags,
-          createdAt,
-          endTime,
-          raised: raisedAmount,
-          donors: pool.donors?.length || 0,
-          isActive: pool.isActive || false,
-          isVerified: pool.campaignType === 1,
-          organizer: pool.organizer,
-          campaignType: pool.campaignType,
-          metadataURI: proposal?.metadataURI,
-        });
-      } catch (error) {
-        console.error(`Error fetching pool ${i}:`, error);
-        continue;
       }
+    } catch (e) {
+      console.error('Error fetching normal pools:', e);
+    }
+
+    // 2. Fetch Zakat Pools from ZakatEscrowManager
+    try {
+      const zakatPoolCount = await publicClient.readContract({
+        address: getAddress(CONTRACT_ADDRESSES.ZakatEscrowManager),
+        abi: ZakatEscrowManagerABI,
+        functionName: 'poolCount',
+      }) as bigint;
+
+      const zakatCount = Number(zakatPoolCount);
+
+      for (let i = 1; i <= zakatCount; i++) {
+        try {
+          const pool = await publicClient.readContract({
+            address: getAddress(CONTRACT_ADDRESSES.ZakatEscrowManager),
+            abi: ZakatEscrowManagerABI,
+            functionName: 'getPool',
+            args: [BigInt(i)],
+          }) as any;
+
+          if (!pool || !pool.campaignTitle) continue;
+          if (pool.poolId === 0n) continue;
+
+          const proposal = await publicClient.readContract({
+            address: getAddress(CONTRACT_ADDRESSES.ProposalManager),
+            abi: ProposalManagerABI,
+            functionName: 'getProposal',
+            args: [BigInt(pool.proposalId)],
+          }) as any;
+
+          let metadata: CampaignMetadata = {
+            title: pool.campaignTitle,
+            description: proposal?.description || '',
+            category: 'Zakat',
+            location: 'Indonesia',
+            imageUrls: [],
+            tags: [],
+            organizationName: pool.organizer
+              ? `${pool.organizer.slice(0, 6)}...${pool.organizer.slice(-4)}`
+              : 'Unknown',
+            organizationVerified: true,
+          };
+
+          if (proposal?.metadataURI && proposal.metadataURI.length > 0) {
+            const ipfsMetadata = await fetchIPFSMetadata(proposal.metadataURI);
+            if (ipfsMetadata) {
+              metadata = { ...metadata, ...ipfsMetadata };
+            }
+          }
+
+          const fundingGoal = Number(pool.fundingGoal || 0n) / 1e18;
+          const raisedAmount = Number(pool.raisedAmount || 0n) / 1e18;
+          const createdAt = Number(pool.createdAt || 0n);
+          const endTime = Number(pool.deadline || 0n);
+
+          campaigns.push({
+            poolId: i,
+            proposalId: Number(pool.proposalId),
+            title: metadata.title,
+            description: metadata.description,
+            category: metadata.category,
+            location: metadata.location,
+            goal: fundingGoal,
+            organizationName: metadata.organizationName,
+            organizationVerified: metadata.organizationVerified,
+            imageUrl: metadata.imageUrls[0] || 'https://images.unsplash.com/photo-1532629345422-7515f3d16bb6?w=500',
+            imageUrls: metadata.imageUrls,
+            tags: metadata.tags,
+            createdAt,
+            endTime,
+            raised: raisedAmount,
+            donors: pool.donors?.length || 0,
+            isActive: pool.status === 0,
+            isVerified: true,
+            organizer: pool.organizer,
+            campaignType: 1,
+            metadataURI: proposal?.metadataURI,
+          });
+        } catch (error) {
+          console.error(`Error fetching zakat pool ${i}:`, error);
+        }
+      }
+    } catch (e) {
+      console.error('Error fetching zakat pools:', e);
     }
 
     return campaigns;
@@ -164,19 +250,42 @@ export async function getAllCampaignPools(): Promise<CampaignData[]> {
 // Get single campaign by pool ID
 export async function getCampaignPool(poolId: number): Promise<CampaignData | null> {
   try {
-    const pool = await publicClient.readContract({
-      address: getAddress(CONTRACT_ADDRESSES.ZKTCore),
-      abi: ZKTCoreABI,
-      functionName: 'getPool',
-      args: [BigInt(poolId)],
-    }) as any;
+    let pool: any = null;
+    let campaignType = 0; // Default to Normal
+
+    // 1. Try PoolManager first
+    try {
+      pool = await publicClient.readContract({
+        address: getAddress(CONTRACT_ADDRESSES.PoolManager),
+        abi: PoolManagerABI,
+        functionName: 'getPool',
+        args: [BigInt(poolId)],
+      }) as any;
+    } catch (e) {
+      // Ignore error, might be in Zakat manager
+    }
+
+    // 2. If not found or empty, try ZakatEscrowManager
+    if (!pool || !pool.campaignTitle || pool.poolId === 0n) {
+      try {
+        pool = await publicClient.readContract({
+          address: getAddress(CONTRACT_ADDRESSES.ZakatEscrowManager),
+          abi: ZakatEscrowManagerABI,
+          functionName: 'getPool',
+          args: [BigInt(poolId)],
+        }) as any;
+        campaignType = 1; // Zakat
+      } catch (e) {
+        // Ignore error
+      }
+    }
 
     if (!pool || !pool.campaignTitle) return null;
 
     // Get proposal for metadata
     const proposal = await publicClient.readContract({
-      address: getAddress(CONTRACT_ADDRESSES.ZKTCore),
-      abi: ZKTCoreABI,
+      address: getAddress(CONTRACT_ADDRESSES.ProposalManager),
+      abi: ProposalManagerABI,
       functionName: 'getProposal',
       args: [BigInt(pool.proposalId)],
     }) as any;
@@ -185,14 +294,14 @@ export async function getCampaignPool(poolId: number): Promise<CampaignData | nu
     let metadata: CampaignMetadata = {
       title: pool.campaignTitle,
       description: proposal?.description || '',
-      category: pool.campaignType === 1 ? 'Zakat' : 'General',
+      category: campaignType === 1 ? 'Zakat' : 'General',
       location: 'Indonesia',
       imageUrls: [],
       tags: [],
       organizationName: pool.organizer
         ? `${pool.organizer.slice(0, 6)}...${pool.organizer.slice(-4)}`
         : 'Unknown',
-      organizationVerified: pool.campaignType === 1,
+      organizationVerified: campaignType === 1,
     };
 
     // Try to fetch IPFS metadata if available
@@ -206,7 +315,16 @@ export async function getCampaignPool(poolId: number): Promise<CampaignData | nu
     const fundingGoal = Number(pool.fundingGoal || 0n) / 1e18;
     const raisedAmount = Number(pool.raisedAmount || 0n) / 1e18;
     const createdAt = Number(pool.createdAt || 0n);
-    const endTime = createdAt + (90 * 24 * 60 * 60); // 90 days from creation
+    
+    // Determine end time based on campaign type
+    let endTime = 0;
+    if (campaignType === 1) {
+      // Zakat pool has deadline
+      endTime = Number(pool.deadline || 0n);
+    } else {
+      // Normal pool default
+      endTime = createdAt + (90 * 24 * 60 * 60);
+    }
 
     return {
       poolId,
@@ -225,10 +343,10 @@ export async function getCampaignPool(poolId: number): Promise<CampaignData | nu
       endTime,
       raised: raisedAmount,
       donors: pool.donors?.length || 0,
-      isActive: pool.isActive || false,
-      isVerified: pool.campaignType === 1,
+      isActive: pool.status !== undefined ? (pool.status === 0) : (pool.isActive || false),
+      isVerified: campaignType === 1,
       organizer: pool.organizer,
-      campaignType: pool.campaignType,
+      campaignType: campaignType,
       metadataURI: proposal?.metadataURI,
     };
   } catch (error) {

@@ -10,7 +10,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { useOrganizerApplication, useIsVerifiedOrganizer, useOrganizerApplication as useOrgApp } from '@/hooks/useOrganizerApplication';
+import { useOrganizerApplication, useIsVerifiedOrganizer, useGetOrganizerApplication } from '@/hooks/useOrganizerApplication';
 import { OrganizerApplicationStatus, KYCStatus } from '@/hooks/useOrganizerApplication';
 
 const statusSteps = [
@@ -23,7 +23,7 @@ const statusSteps = [
 
 export default function OrganizerApplyPage() {
   const { address, isConnected } = useAccount();
-  const { application, applicationId, isLoading: isLoadingApp } = useOrgApp(address);
+  const { application, applicationId, isLoading: isLoadingApp } = useGetOrganizerApplication(address);
   const { isVerified } = useIsVerifiedOrganizer(address);
   const { submitApplication, isLoading: isSubmitting } = useOrganizerApplication({
     onSuccess: () => {
@@ -303,7 +303,9 @@ export default function OrganizerApplyPage() {
                   </div>
                   <div className="h-4 border-l-2 border-dashed ml-4"></div>
                   <div className="flex items-center gap-4">
-                    <CheckCircle2 className="h-8 w-8 rounded-full bg-green-600 flex items-center justify-center text-sm font-bold text-white">4</div>
+                    <div className="h-8 w-8 rounded-full bg-green-600 flex items-center justify-center text-sm font-bold text-white">
+                      <CheckCircle2 className="h-5 w-5 text-white" />
+                    </div>
                     <div>
                       <div className="font-semibold text-green-600">Approved</div>
                       <div className="text-sm text-muted-foreground">Receive Organizer NFT and create campaigns</div>

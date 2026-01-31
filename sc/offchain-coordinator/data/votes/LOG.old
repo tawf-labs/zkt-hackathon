@@ -1,0 +1,5 @@
+2026/01/31-09:59:59.677405 ffff8a2029d8 Recovering log #7
+2026/01/31-09:59:59.677660 ffff8a2029d8 Level-0 table #9: started
+2026/01/31-09:59:59.678108 ffff8a2029d8 Level-0 table #9: 448 bytes OK
+2026/01/31-09:59:59.679017 ffff8a2029d8 Delete type=0 #7
+2026/01/31-09:59:59.679097 ffff8a2029d8 Delete type=3 #6

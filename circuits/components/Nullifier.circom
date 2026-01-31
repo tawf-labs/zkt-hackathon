@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma circom 2.0.0;
 
+include "../node_modules/circomlib/circuits/poseidon.circom";
+
 /**
  * @title Nullifier
  * @notice Verifies that a nullifier hasn't been spent
@@ -27,7 +29,6 @@ template Nullifier() {
     // The nullifier is a Poseidon hash of (memberSecret ++ voteIndex)
     // The coordinator ensures uniqueness off-chain
 
-    // Import Poseidon hash
     component hashCheck = Poseidon(1);
     hashCheck.inputs[0] <== nullifier;
 

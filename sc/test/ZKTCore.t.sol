@@ -220,9 +220,9 @@ contract ZKTCoreTest is Test {
         vm.stopPrank();
 
         assertEq(proposalId, 1);
-        assertEq(dao.proposalCount(), 1);
+        assertEq(dao.proposalManager().proposalCount(), 1);
 
-        IProposalManager.Proposal memory proposal = dao.getProposal(1);
+        IProposalManager.Proposal memory proposal = dao.proposalManager().getProposal(1);
         assertEq(proposal.organizer, organizer);
         assertEq(proposal.title, "Build School in Village");
         assertEq(proposal.fundingGoal, 1000 * 10 ** 18);
@@ -255,7 +255,7 @@ contract ZKTCoreTest is Test {
 
         vm.stopPrank();
 
-        IProposalManager.Proposal memory proposal = dao.getProposal(proposalId);
+        IProposalManager.Proposal memory proposal = dao.proposalManager().getProposal(proposalId);
         assertTrue(proposal.isEmergency);
         assertEq(
             uint8(proposal.kycStatus),
@@ -286,7 +286,7 @@ contract ZKTCoreTest is Test {
             "KYC verified via mock ZK proof"
         );
 
-        IProposalManager.Proposal memory proposal = dao.getProposal(proposalId);
+        IProposalManager.Proposal memory proposal = dao.proposalManager().getProposal(proposalId);
         assertEq(
             uint8(proposal.kycStatus),
             uint8(IProposalManager.KYCStatus.Verified)
@@ -320,7 +320,7 @@ contract ZKTCoreTest is Test {
         vm.prank(organizer);
         dao.submitForCommunityVote(proposalId);
 
-        IProposalManager.Proposal memory proposal = dao.getProposal(proposalId);
+        IProposalManager.Proposal memory proposal = dao.proposalManager().getProposal(proposalId);
         assertEq(
             uint8(proposal.status),
             uint8(IProposalManager.ProposalStatus.CommunityVote)
@@ -342,7 +342,7 @@ contract ZKTCoreTest is Test {
         // Finalize vote
         dao.finalizeCommunityVote(proposalId);
 
-        proposal = dao.getProposal(proposalId);
+        proposal = dao.proposalManager().getProposal(proposalId);
         // After finalization with passing vote, automatic bundling occurs
         // Status changes from CommunityPassed → ShariaReview
         assertEq(
@@ -411,7 +411,7 @@ contract ZKTCoreTest is Test {
         vm.prank(shariaCouncil1);
         dao.finalizeShariaBundle(bundleId);
 
-        IProposalManager.Proposal memory proposal = dao.getProposal(proposalId);
+        IProposalManager.Proposal memory proposal = dao.proposalManager().getProposal(proposalId);
         assertEq(
             uint8(proposal.status),
             uint8(IProposalManager.ProposalStatus.ShariaApproved)
@@ -544,7 +544,7 @@ contract ZKTCoreTest is Test {
         assertEq(donor2Receipts.length, 1);
 
         // Check pool status - use getZakatPool for Zakat campaigns
-        ZakatEscrowManager.ZakatPool memory zakatPool = dao.getZakatPool(
+        ZakatEscrowManager.ZakatPool memory zakatPool = dao.zakatEscrowManager().getPool(
             poolId
         );
         assertEq(zakatPool.raisedAmount, 1400 * 10 ** 18); // 500 + 300 + 600
@@ -769,9 +769,9 @@ contract ZKTCoreTest is Test {
         assertEq(proposalId, 1);
 
         // Verify milestones stored correctly
-        assertEq(dao.getMilestoneCount(proposalId), 3);
+        assertEq(dao.proposalManager().getMilestoneCount(proposalId), 3);
 
-        IProposalManager.Milestone memory m1 = dao.getMilestone(proposalId, 0);
+        IProposalManager.Milestone memory m1 = dao.proposalManager().getMilestone(proposalId, 0);
         assertEq(m1.description, "Complete Well #1");
         assertEq(m1.targetAmount, 30000 * 10 ** 18);
         assertEq(
@@ -873,7 +873,7 @@ contract ZKTCoreTest is Test {
         dao.submitMilestoneProof(proposalId, 0, "QmProofWell1Complete");
 
         // Verify proof submitted
-        IProposalManager.Milestone memory m = dao.getMilestone(proposalId, 0);
+        IProposalManager.Milestone memory m = dao.proposalManager().getMilestone(proposalId, 0);
         assertEq(m.proofIPFS, "QmProofWell1Complete");
         assertEq(
             uint8(m.status),
@@ -944,7 +944,7 @@ contract ZKTCoreTest is Test {
         // Start voting
         dao.startMilestoneVoting(proposalId, 0);
 
-        IProposalManager.Milestone memory m = dao.getMilestone(proposalId, 0);
+        IProposalManager.Milestone memory m = dao.proposalManager().getMilestone(proposalId, 0);
         assertEq(
             uint8(m.status),
             uint8(IProposalManager.MilestoneStatus.Voting)
@@ -961,14 +961,14 @@ contract ZKTCoreTest is Test {
         dao.voteMilestone(proposalId, 0, 0); // Against
 
         // Fast forward to end of voting period
-        IProposalManager.Milestone memory mBeforeFinalize = dao.getMilestone(
+        IProposalManager.Milestone memory mBeforeFinalize = dao.proposalManager().getMilestone(
             proposalId,
             0
         );
         vm.warp(mBeforeFinalize.voteEnd + 1);
         dao.finalizeMilestoneVote(proposalId, 0);
 
-        m = dao.getMilestone(proposalId, 0);
+        m = dao.proposalManager().getMilestone(proposalId, 0);
         assertEq(
             uint8(m.status),
             uint8(IProposalManager.MilestoneStatus.Approved)
@@ -1053,7 +1053,7 @@ contract ZKTCoreTest is Test {
         vm.prank(member2);
         dao.voteMilestone(proposalId, 0, 1);
 
-        IProposalManager.Milestone memory mBeforeFinalize = dao.getMilestone(
+        IProposalManager.Milestone memory mBeforeFinalize = dao.proposalManager().getMilestone(
             proposalId,
             0
         );
@@ -1071,7 +1071,7 @@ contract ZKTCoreTest is Test {
         );
 
         // Verify milestone completed
-        IProposalManager.Milestone memory m = dao.getMilestone(proposalId, 0);
+        IProposalManager.Milestone memory m = dao.proposalManager().getMilestone(proposalId, 0);
         assertEq(
             uint8(m.status),
             uint8(IProposalManager.MilestoneStatus.Completed)
@@ -1179,7 +1179,7 @@ contract ZKTCoreTest is Test {
         vm.stopPrank();
 
         // Verify all sensitive fields are initialized to safe defaults
-        IProposalManager.Milestone memory created = dao.getMilestone(
+        IProposalManager.Milestone memory created = dao.proposalManager().getMilestone(
             proposalId,
             0
         );
@@ -1292,7 +1292,7 @@ contract ZKTCoreTest is Test {
         dao.voteMilestone(proposalId, 0, 1);
         vm.prank(member2);
         dao.voteMilestone(proposalId, 0, 1);
-        IProposalManager.Milestone memory m0 = dao.getMilestone(proposalId, 0);
+        IProposalManager.Milestone memory m0 = dao.proposalManager().getMilestone(proposalId, 0);
         vm.warp(m0.voteEnd + 1);
         dao.finalizeMilestoneVote(proposalId, 0);
 
@@ -1312,7 +1312,7 @@ contract ZKTCoreTest is Test {
         dao.voteMilestone(proposalId, 1, 1);
         vm.prank(member2);
         dao.voteMilestone(proposalId, 1, 1);
-        IProposalManager.Milestone memory m1 = dao.getMilestone(proposalId, 1);
+        IProposalManager.Milestone memory m1 = dao.proposalManager().getMilestone(proposalId, 1);
         vm.warp(m1.voteEnd + 1);
         dao.finalizeMilestoneVote(proposalId, 1);
 
@@ -1325,7 +1325,7 @@ contract ZKTCoreTest is Test {
         );
 
         // Verify proposal completed
-        IProposalManager.Proposal memory proposal = dao.getProposal(proposalId);
+        IProposalManager.Proposal memory proposal = dao.proposalManager().getProposal(proposalId);
         assertEq(
             uint8(proposal.status),
             uint8(IProposalManager.ProposalStatus.Completed)

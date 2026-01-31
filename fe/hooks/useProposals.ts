@@ -1,88 +1,117 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useReadContracts } from "wagmi";
-import { CONTRACT_ADDRESSES, ZKTCoreABI } from "@/lib/abi";
+import { useReadContract, useReadContracts } from "wagmi";
+import { CONTRACT_ADDRESSES, VotingManagerABI, ZKTCoreABI,  } from "@/lib/abi";
 import { Proposal, ProposalStatus, KYCStatus, CampaignType, proposalToProposalData, ProposalData } from "@/lib/types";
-
-/**
- * Hook to fetch a single proposal by ID
- */
-function useProposalData(proposalId: number) {
-  const result = useReadContracts({
-    contracts: [
-      {
-        address: CONTRACT_ADDRESSES.ZKTCore,
-        abi: ZKTCoreABI,
-        functionName: "getProposal",
-        args: [BigInt(proposalId)],
-      },
-    ],
-    query: {
-      staleTime: 30_000,
-      gcTime: 300_000,
-      enabled: proposalId >= 0,
-    },
-  });
-
-  return result;
-}
 
 /**
  * Hook to fetch multiple proposals
  * @param proposalIds - Array of proposal IDs to fetch
  */
 export function useProposals(proposalIds: number[] = [0, 1, 2, 3]) {
-  const proposals = proposalIds.map((id) => useProposalData(id));
+  // Build contract calls for all proposals at once
+  const contracts = proposalIds.map((id) => ({
+    address: CONTRACT_ADDRESSES.ProposalManager,
+    abi: ZKTCoreABI,
+    functionName: "getProposal" as const,
+    args: [BigInt(id)] as const,
+  }));
 
-  const isLoading = proposals.some((p) => p.isLoading);
-  const error = proposals.find((p) => p.error)?.error;
+  const { data, isLoading, error, refetch } = useReadContracts({
+    contracts,
+    query: {
+      staleTime: 30_000,
+      gcTime: 300_000,
+      enabled: proposalIds.length > 0,
+    },
+  });
 
-  const data: ProposalData[] = proposals
-    .map((proposal, index) => {
-      if (!proposal.data || proposal.data[0].status !== "success") {
-        return null;
-      }
+  // Fetch vote counts from VotingManager for each proposal
+  const voteContracts = proposalIds.flatMap((id) => [
+    {
+      address: CONTRACT_ADDRESSES.VotingManager,
+      abi: VotingManagerABI,
+      functionName: "votesFor" as const,
+      args: [BigInt(id)] as const,
+    },
+    {
+      address: CONTRACT_ADDRESSES.VotingManager,
+      abi: VotingManagerABI,
+      functionName: "votesAgainst" as const,
+      args: [BigInt(id)] as const,
+    },
+    {
+      address: CONTRACT_ADDRESSES.VotingManager,
+      abi: VotingManagerABI,
+      functionName: "votesAbstain" as const,
+      args: [BigInt(id)] as const,
+    },
+  ]);
 
-      const proposalData = proposal.data[0].result as any;
+  const { data: voteData } = useReadContracts({
+    contracts: voteContracts,
+    query: {
+      staleTime: 30_000,
+      gcTime: 300_000,
+      enabled: proposalIds.length > 0,
+    },
+  });
 
-      if (!proposalData || typeof proposalData !== "object") {
-        return null;
-      }
+  const proposals: ProposalData[] = data
+    ? data
+        .map((proposal, index) => {
+          if (!proposal || proposal.status !== "success") {
+            return null;
+          }
 
-      // Map the contract response to our Proposal interface
-      const prop: Proposal = {
-        proposalId: BigInt(proposalIds[index]),
-        organizer: proposalData.organizer || "",
-        title: proposalData.title || `Proposal ${proposalIds[index]}`,
-        description: proposalData.description || "",
-        fundingGoal: proposalData.fundingGoal || BigInt(0),
-        isEmergency: proposalData.isEmergency || false,
-        mockZKKYCProof: proposalData.mockZKKYCProof || "",
-        zakatChecklistItems: proposalData.zakatChecklistItems || [],
-        createdAt: proposalData.createdAt || BigInt(0),
-        status: proposalData.status !== undefined ? Number(proposalData.status) : ProposalStatus.Draft,
-        kycStatus: proposalData.kycStatus !== undefined ? Number(proposalData.kycStatus) : KYCStatus.Pending,
-        campaignType: proposalData.campaignType !== undefined ? Number(proposalData.campaignType) : CampaignType.Normal,
-        poolId: proposalData.poolId || BigInt(0),
-        communityVoteStartTime: proposalData.communityVoteStartTime || BigInt(0),
-        communityVoteEndTime: proposalData.communityVoteEndTime || BigInt(0),
-        votesFor: proposalData.votesFor || BigInt(0),
-        votesAgainst: proposalData.votesAgainst || BigInt(0),
-        votesAbstain: proposalData.votesAbstain || BigInt(0),
-        communityVotePassed: proposalData.communityVotePassed || false,
-      };
+          const proposalData = proposal.result as any;
 
-      return proposalToProposalData(prop);
-    })
-    .filter((p): p is ProposalData => p !== null);
+          if (!proposalData || typeof proposalData !== "object") {
+            return null;
+          }
 
-  const refetch = () => {
-    proposals.forEach((p) => p.refetch());
-  };
+          // Extract vote counts from VotingManager (3 entries per proposal: votesFor, votesAgainst, votesAbstain)
+          const voteIndex = index * 3;
+          const votesForData = voteData?.[voteIndex];
+          const votesAgainstData = voteData?.[voteIndex + 1];
+          const votesAbstainData = voteData?.[voteIndex + 2];
+
+          const votesFor = votesForData?.status === "success" ? (votesForData.result as bigint) : BigInt(0);
+          const votesAgainst = votesAgainstData?.status === "success" ? (votesAgainstData.result as bigint) : BigInt(0);
+          const votesAbstain = votesAbstainData?.status === "success" ? (votesAbstainData.result as bigint) : BigInt(0);
+
+          // Map the contract response to our Proposal interface
+          const prop: Proposal = {
+            proposalId: BigInt(proposalIds[index]),
+            organizer: proposalData.organizer || "",
+            title: proposalData.title || `Proposal ${proposalIds[index]}`,
+            description: proposalData.description || "",
+            fundingGoal: proposalData.fundingGoal || BigInt(0),
+            isEmergency: proposalData.isEmergency || false,
+            mockZKKYCProof: proposalData.mockZKKYCProof || "",
+            zakatChecklistItems: proposalData.zakatChecklistItems || [],
+            createdAt: proposalData.createdAt || BigInt(0),
+            status: proposalData.status !== undefined ? Number(proposalData.status) : ProposalStatus.Draft,
+            kycStatus: proposalData.kycStatus !== undefined ? Number(proposalData.kycStatus) : KYCStatus.Pending,
+            campaignType: proposalData.campaignType !== undefined ? Number(proposalData.campaignType) : CampaignType.Normal,
+            poolId: proposalData.poolId || BigInt(0),
+            communityVoteStartTime: proposalData.communityVoteStartTime || BigInt(0),
+            communityVoteEndTime: proposalData.communityVoteEndTime || BigInt(0),
+            votesFor: votesFor,
+            votesAgainst: votesAgainst,
+            votesAbstain: votesAbstain,
+            communityVotePassed: proposalData.communityVotePassed || false,
+            metadataURI: proposalData.metadataURI || "",
+          };
+
+          return proposalToProposalData(prop);
+        })
+        .filter((p): p is ProposalData => p !== null)
+    : [];
 
   return {
-    proposals: data,
+    proposals,
     isLoading,
     error,
     refetch,
@@ -111,7 +140,7 @@ export function useProposalCount() {
   const { data, isLoading } = useReadContracts({
     contracts: [
       {
-        address: CONTRACT_ADDRESSES.ZKTCore,
+        address: CONTRACT_ADDRESSES.ProposalManager,
         abi: ZKTCoreABI,
         functionName: "proposalCount",
       },

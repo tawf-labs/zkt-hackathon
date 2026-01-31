@@ -210,7 +210,10 @@ export const useVoting = (options?: UseVotingOptions) => {
           abi: ZKTCoreABI,
           functionName: 'submitForCommunityVote',
           args: [BigInt(proposalId)],
+          
         });
+
+        console.log({hash})
 
         toast({
           title: 'Submitted for Voting! 📢',

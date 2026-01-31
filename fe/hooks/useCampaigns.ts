@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 import { useReadContracts } from "wagmi";
 import { CONTRACT_ADDRESSES, ZKTCoreABI } from "@/lib/abi";
 import { getAllCampaignPools, getCampaignPool, calculateDaysLeft, type CampaignData } from "@/lib/contract-client";
+import { campaigns as demoCampaigns } from "@/data/campaigns";
 
 // Campaign structure (UI-friendly)
 export interface Campaign {
@@ -39,10 +40,47 @@ export function useCampaigns() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
 
+  console.log(demoCampaigns)
+
   // Fetch campaigns using contract client
   const fetchCampaigns = useCallback(async () => {
     setIsLoading(true);
     setError(null);
+    // If running with mocks enabled, return local demo data
+    try {
+      if (typeof window !== "undefined" && process.env.NEXT_PUBLIC_USE_MOCKS === "1") {
+        const converted: Campaign[] = demoCampaigns.map((d) => ({
+          id: d.id,
+          poolId: d.id,
+          title: d.title,
+          description: "",
+          imageUrl: d.image,
+          image: d.image,
+          organizationName: d.organizationName,
+          organizationAddress: "",
+          category: d.category,
+          location: d.location || "",
+          raised: d.raised,
+          goal: d.goal,
+          donors: d.donors,
+          daysLeft: d.daysLeft,
+          isActive: true,
+          isVerified: false,
+          startDate: Date.now(),
+          endDate: Date.now() + (d.daysLeft || 0) * 24 * 60 * 60 * 1000,
+          campaignType: 0,
+          imageUrls: d.image ? [d.image] : [],
+          tags: [],
+        }));
+
+        setCampaigns(converted);
+        setIsLoading(false);
+        return;
+      }
+    } catch (err) {
+      // fallback to normal flow if env access fails
+      console.warn("Mock campaigns check failed, continuing to contract fetch.", err);
+    }
     try {
       const contractCampaigns = await getAllCampaignPools();
 
@@ -73,9 +111,41 @@ export function useCampaigns() {
 
       setCampaigns(convertedCampaigns);
     } catch (err) {
+      // If contract fetch fails, fall back to demo data when available
+      console.error("Error fetching campaigns, falling back to demo data:", err);
+      try {
+        const converted: Campaign[] = demoCampaigns.map((d) => ({
+          id: d.id,
+          poolId: d.id,
+          title: d.title,
+          description: "",
+          imageUrl: d.image,
+          image: d.image,
+          organizationName: d.organizationName,
+          organizationAddress: "",
+          category: d.category,
+          location: d.location || "",
+          raised: d.raised,
+          goal: d.goal,
+          donors: d.donors,
+          daysLeft: d.daysLeft,
+          isActive: true,
+          isVerified: false,
+          startDate: Date.now(),
+          endDate: Date.now() + (d.daysLeft || 0) * 24 * 60 * 60 * 1000,
+          campaignType: 0,
+          imageUrls: d.image ? [d.image] : [],
+          tags: [],
+        }));
+
+        setCampaigns(converted);
+      } catch (fallbackErr) {
+        const error = err instanceof Error ? err : new Error("Unknown error");
+        setError(error);
+        console.error("Error fetching campaigns and fallback failed:", fallbackErr);
+      }
       const error = err instanceof Error ? err : new Error("Unknown error");
       setError(error);
-      console.error("Error fetching campaigns:", error);
     } finally {
       setIsLoading(false);
     }

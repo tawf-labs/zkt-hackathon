@@ -1,0 +1,24 @@
+
+> zkt-sharia-coordinator@1.0.0 start
+> node src/index.js
+
+[INFO] 2026-01-31T06:37:00.590Z Sharia Council Coordinator listening on port 5000
+[INFO] 2026-01-31T06:37:00.591Z Health check: http://localhost:5000/health
+[INFO] 2026-01-31T06:37:00.591Z Council root: 0
+[INFO] 2026-01-31T06:37:04.776Z Vote recorded: 0x1111111111111111111111111111111111111111 voted approve on proposal 456
+[INFO] 2026-01-31T06:37:04.778Z Vote recorded: 0x2222222222222222222222222222222222222222 voted approve on proposal 456
+[INFO] 2026-01-31T06:37:04.780Z Vote recorded: 0x3333333333333333333333333333333333333333 voted approve on proposal 456
+[INFO] 2026-01-31T06:37:04.780Z Quorum reached for bundle 123, proposal 456
+[ERROR] 2026-01-31T06:37:04.781Z Error processing vote: Error: ENOENT: no such file or directory, open '/Users/bhremadafevreano/Developer/projects/zkt-hackathon/sc/circuits/build/ShariaVoteAggregator_js/ShariaVoteAggregator.wasm'
+    at async Object.open (node:internal/fs/promises:641:25)
+    at async open (file:///Users/bhremadafevreano/Developer/projects/zkt-hackathon/sc/offchain-coordinator/node_modules/fastfile/src/osfile.js:8:15)
+    at async Module.readExisting (file:///Users/bhremadafevreano/Developer/projects/zkt-hackathon/sc/offchain-coordinator/node_modules/fastfile/src/fastfile.js:81:16)
+    at async wtnsCalculate (file:///Users/bhremadafevreano/Developer/projects/zkt-hackathon/sc/offchain-coordinator/node_modules/snarkjs/src/wtns_calculate.js:30:20)
+    at async Module.groth16FullProve (file:///Users/bhremadafevreano/Developer/projects/zkt-hackathon/sc/offchain-coordinator/node_modules/snarkjs/src/groth16_fullprove.js:31:5)
+    at async ProofGenerator.generateProof (file:///Users/bhremadafevreano/Developer/projects/zkt-hackathon/sc/offchain-coordinator/src/modules/ProofGenerator.js:44:38)
+    at async file:///Users/bhremadafevreano/Developer/projects/zkt-hackathon/sc/offchain-coordinator/src/index.js:162:21 {
+  errno: -2,
+  code: 'ENOENT',
+  syscall: 'open',
+  path: '/Users/bhremadafevreano/Developer/projects/zkt-hackathon/sc/circuits/build/ShariaVoteAggregator_js/ShariaVoteAggregator.wasm'
+}

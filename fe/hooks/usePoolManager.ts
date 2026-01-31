@@ -16,7 +16,7 @@ interface UsePoolManagerOptions {
  */
 export function usePool(poolId: number | bigint) {
   const { data, isLoading, refetch } = useReadContract({
-    address: CONTRACT_ADDRESSES.ZKTCore,
+    address: CONTRACT_ADDRESSES.PoolManager,
     abi: ZKTCoreABI,
     functionName: 'getPool',
     args: [BigInt(poolId)],
@@ -41,7 +41,7 @@ export function usePool(poolId: number | bigint) {
  */
 export function useAllPools() {
   const { data: poolCount } = useReadContract({
-    address: CONTRACT_ADDRESSES.ZKTCore,
+    address: CONTRACT_ADDRESSES.PoolManager,
     abi: ZKTCoreABI,
     functionName: 'poolCount',
     query: {

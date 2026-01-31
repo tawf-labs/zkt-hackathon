@@ -11,7 +11,7 @@
     "test": "node test/test.js"
   },
   "devDependencies": {
-    "circom": "^2.1.6",
+    "circom": "^0.5.46",
     "circomlib": "^2.0.5",
     "snarkjs": "^0.7.3"
   },

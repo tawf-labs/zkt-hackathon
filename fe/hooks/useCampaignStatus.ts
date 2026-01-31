@@ -15,7 +15,7 @@ export function useCampaignStatus(poolId: string | number | null) {
     error,
     refetch,
   } = useReadContract({
-    address: CONTRACT_ADDRESSES.ZKTCore as `0x${string}`,
+    address: CONTRACT_ADDRESSES.PoolManager as `0x${string}`,
     abi: ZKTCoreABI,
     functionName: 'getPool',
     args: poolId !== null ? [BigInt(poolId)] : undefined,

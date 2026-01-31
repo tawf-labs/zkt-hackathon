@@ -642,44 +642,6 @@ contract ZKTCore is AccessControl {
         zakatEscrowManager.setDefaultFallbackPool(pool);
     }
 
-    // ============ View Functions ============
-
-    function proposalCount() external view returns (uint256) {
-        return proposalManager.proposalCount();
-    }
-
-    function poolCount() external view returns (uint256) {
-        return poolManager.poolCount();
-    }
-
-    function bundleCount() external view returns (uint256) {
-        return shariaReviewManager.bundleCount();
-    }
-    
-    function getProposal(uint256 proposalId) external view returns (IProposalManager.Proposal memory) {
-        return proposalManager.getProposal(proposalId);
-    }
-    
-    function getProposalChecklistItems(uint256 proposalId) external view returns (string[] memory) {
-        return proposalManager.getProposalChecklistItems(proposalId);
-    }
-    
-    function getBundle(uint256 bundleId) external view returns (ShariaReviewManager.ShariaReviewBundle memory) {
-        return shariaReviewManager.getBundle(bundleId);
-    }
-    
-    function getPool(uint256 poolId) external view returns (PoolManager.CampaignPool memory) {
-        return poolManager.getPool(poolId);
-    }
-    
-    function getPoolDonors(uint256 poolId) external view returns (address[] memory) {
-        return poolManager.getPoolDonors(poolId);
-    }
-    
-    function getDonorContribution(uint256 poolId, address donor) external view returns (uint256) {
-        return poolManager.getDonorContribution(poolId, donor);
-    }
-    
     // ============ Configuration Functions (DEFAULT_ADMIN_ROLE for initial setup) ============
     
     function setVotingPeriod(uint256 _votingPeriod) external onlyRole(DEFAULT_ADMIN_ROLE) {

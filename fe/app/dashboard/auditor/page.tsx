@@ -1,12 +1,28 @@
 "use client";
 
-import React, { useState } from 'react';
-import { Shield, LayoutDashboard, Building2, FileCheck, TriangleAlert, Search, Download, Activity, AlertCircle, TrendingUp, Users } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { Shield, LayoutDashboard, Building2, FileCheck, TriangleAlert, Search, Download, Activity, AlertCircle, CheckCircle2, XCircle, FileText } from 'lucide-react';
+import { useAccount } from 'wagmi';
+import { useProposal } from '@/hooks/useProposals';
+import { useUpdateKYCStatus, KYCStatus, getKYCStatusLabel, getKYCStatusColor } from '@/hooks/useKYCOracle';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
 
-type SidebarTab = 'overview' | 'organizations' | 'audit' | 'alerts';
+type SidebarTab = 'overview' | 'organizations' | 'audit' | 'alerts' | 'kyc';
 
 const BaznasDashboard = () => {
   const [sidebarTab, setSidebarTab] = useState<SidebarTab>('overview');
+  const { address } = useAccount();
+
+  // KYC Verification state
+  const [proposalId, setProposalId] = useState("");
+  const [notes, setNotes] = useState("");
+
+  const { proposal, refetch } = useProposal(Number(proposalId) || 0);
+  const { updateKYCStatus, isPending, isSuccess, error } = useUpdateKYCStatus();
 
   const organizations = [
     { name: 'Laznas BSM', allocation: '$1.2M', status: 'Compliant', risk: 'Low', riskPercent: 20 },
@@ -24,22 +40,37 @@ const BaznasDashboard = () => {
     { action: 'Risk Alert Resolved', org: 'Small NGO A', tx: '0xc3...7b4', time: '3 hours ago' },
   ];
 
-  const getStatusColor = (status) => {
-    return status === 'Compliant' 
-      ? 'bg-emerald-100 text-emerald-700' 
+  const getStatusColor = (status: string) => {
+    return status === 'Compliant'
+      ? 'bg-emerald-100 text-emerald-700'
       : 'bg-amber-100 text-amber-700';
   };
 
-  const getRiskColor = (risk) => {
-    return risk === 'Low' 
-      ? 'bg-emerald-500' 
+  const getRiskColor = (risk: string) => {
+    return risk === 'Low'
+      ? 'bg-emerald-500'
       : 'bg-amber-500';
   };
 
-  const getRiskBgColor = (risk) => {
-    return risk === 'Low' 
-      ? 'bg-emerald-200' 
+  const getRiskBgColor = (risk: string) => {
+    return risk === 'Low'
+      ? 'bg-emerald-200'
       : 'bg-amber-200';
+  };
+
+  const handleVerify = async (status: KYCStatus) => {
+    if (!proposalId || !notes) {
+      alert("Please enter proposal ID and verification notes");
+      return;
+    }
+
+    try {
+      await updateKYCStatus(Number(proposalId), status, notes);
+      await refetch();
+      setNotes("");
+    } catch (err) {
+      console.error("Failed to update KYC status:", err);
+    }
   };
 
   return (
@@ -64,19 +95,30 @@ const BaznasDashboard = () => {
               onClick={() => setSidebarTab('overview')}
               className={`w-full flex items-center gap-2 px-4 py-2 rounded-md text-sm font-semibold transition-colors ${
                 sidebarTab === 'overview'
-                  ? 'bg-white text-black'
-                  : 'text-black hover:text-white hover:bg-gray-200'
+                  ? 'bg-black text-white'
+                  : 'text-black hover:text-white hover:bg-gray-800'
               }`}
             >
               <LayoutDashboard className="h-4 w-4" />
               Ecosystem Overview
             </button>
             <button
+              onClick={() => setSidebarTab('kyc')}
+              className={`w-full flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                sidebarTab === 'kyc'
+                  ? 'bg-black text-white'
+                  : 'text-black hover:text-white hover:bg-gray-800'
+              }`}
+            >
+              <FileText className="h-4 w-4" />
+              KYC Verification
+            </button>
+            <button
               onClick={() => setSidebarTab('organizations')}
               className={`w-full flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
                 sidebarTab === 'organizations'
-                  ? 'bg-white text-black'
-                  : 'text-black hover:text-white hover:bg-gray-200'
+                  ? 'bg-black text-white'
+                  : 'text-black hover:text-white hover:bg-gray-800'
               }`}
             >
               <Building2 className="h-4 w-4" />
@@ -86,8 +128,8 @@ const BaznasDashboard = () => {
               onClick={() => setSidebarTab('audit')}
               className={`w-full flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
                 sidebarTab === 'audit'
-                  ? 'bg-white text-black'
-                  : 'text-black hover:text-white hover:bg-gray-200'
+                  ? 'bg-black text-white'
+                  : 'text-black hover:text-white hover:bg-gray-800'
               }`}
             >
               <FileCheck className="h-4 w-4" />
@@ -97,8 +139,8 @@ const BaznasDashboard = () => {
               onClick={() => setSidebarTab('alerts')}
               className={`w-full flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
                 sidebarTab === 'alerts'
-                  ? 'bg-white text-black'
-                  : 'text-black hover:text-white hover:bg-gray-200'
+                  ? 'bg-black text-white'
+                  : 'text-black hover:text-white hover:bg-gray-800'
               }`}
             >
               <TriangleAlert className="h-4 w-4" />
@@ -110,6 +152,181 @@ const BaznasDashboard = () => {
 
       {/* Main Content */}
       <main className="flex-1 overflow-y-auto p-8 bg-white">
+        {/* KYC Verification Tab */}
+        {sidebarTab === 'kyc' && (
+          <>
+            <div className="mb-8">
+              <h1 className="text-3xl font-bold tracking-tight text-black">KYC Verification</h1>
+              <p className="text-black">Verify or reject proposal KYC submissions</p>
+            </div>
+
+            <div className="grid gap-6 max-w-4xl">
+              {/* KYC Verification Panel */}
+              <Card>
+                <CardHeader>
+                  <CardTitle>Update Proposal KYC Status</CardTitle>
+                  <CardDescription>
+                    Verify or reject proposal KYC submissions (requires KYC_ORACLE_ROLE)
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="space-y-2">
+                    <label htmlFor="proposalId" className="text-sm font-medium">
+                      Proposal ID
+                    </label>
+                    <Input
+                      id="proposalId"
+                      type="number"
+                      placeholder="Enter proposal ID (e.g., 1)"
+                      value={proposalId}
+                      onChange={(e) => setProposalId(e.target.value)}
+                      className="max-w-md"
+                    />
+                  </div>
+
+                  {/* Show proposal details if loaded */}
+                  {proposal && Number(proposalId) > 0 && (
+                    <Card className="bg-slate-50 border-slate-200">
+                      <CardContent className="pt-6 space-y-3">
+                        <div className="flex justify-between items-start">
+                          <div className="flex-1">
+                            <h3 className="font-semibold text-lg">{proposal.title}</h3>
+                            <p className="text-sm text-slate-600 mt-1">{proposal.description}</p>
+                          </div>
+                          <Badge className={getKYCStatusColor(proposal.kycStatus)}>
+                            {getKYCStatusLabel(proposal.kycStatus)}
+                          </Badge>
+                        </div>
+                        <div className="grid grid-cols-2 gap-4 text-sm pt-2 border-t">
+                          <div>
+                            <span className="text-slate-600">Organizer:</span>
+                            <p className="font-mono text-xs mt-1">
+                              {proposal.organizer.slice(0, 6)}...{proposal.organizer.slice(-4)}
+                            </p>
+                          </div>
+                          <div>
+                            <span className="text-slate-600">Funding Goal:</span>
+                            <p className="font-semibold mt-1">
+                              {proposal.fundingGoal} IDRX
+                            </p>
+                          </div>
+                          <div>
+                            <span className="text-slate-600">Emergency:</span>
+                            <p className="mt-1">
+                              {proposal.isEmergency ? (
+                                <Badge variant="destructive" className="text-xs">Yes</Badge>
+                              ) : (
+                                <Badge variant="secondary" className="text-xs">No</Badge>
+                              )}
+                            </p>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  )}
+
+                  <div className="space-y-2">
+                    <label htmlFor="notes" className="text-sm font-medium">
+                      Verification Notes <span className="text-red-500">*</span>
+                    </label>
+                    <Textarea
+                      id="notes"
+                      placeholder="Enter verification notes or reasoning (e.g., 'Verified via government ID check and organization registration documents')"
+                      value={notes}
+                      onChange={(e) => setNotes(e.target.value)}
+                      rows={4}
+                      className="resize-none"
+                    />
+                    <p className="text-xs text-slate-500">
+                      Notes will be stored on-chain and visible to all users
+                    </p>
+                  </div>
+
+                  <div className="flex gap-3 pt-2">
+                    <Button
+                      onClick={() => handleVerify(KYCStatus.Verified)}
+                      disabled={isPending || !proposalId || !notes || !proposal}
+                      className="bg-green-600 hover:bg-green-700"
+                    >
+                      <CheckCircle2 className="w-4 h-4 mr-2" />
+                      {isPending ? "Processing..." : "Verify KYC"}
+                    </Button>
+
+                    <Button
+                      onClick={() => handleVerify(KYCStatus.Rejected)}
+                      disabled={isPending || !proposalId || !notes || !proposal}
+                      variant="destructive"
+                    >
+                      <XCircle className="w-4 h-4 mr-2" />
+                      {isPending ? "Processing..." : "Reject KYC"}
+                    </Button>
+                  </div>
+
+                  {isSuccess && (
+                    <div className="p-4 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-md">
+                      <p className="text-green-800 dark:text-green-200 font-medium flex items-center gap-2">
+                        <CheckCircle2 className="h-4 w-4" />
+                        KYC status updated successfully!
+                      </p>
+                    </div>
+                  )}
+
+                  {error && (
+                    <div className="p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-md">
+                      <p className="text-red-800 dark:text-red-200 font-medium flex items-center gap-2">
+                        <XCircle className="h-4 w-4" />
+                        Error: {error.message}
+                      </p>
+                      <p className="text-xs text-red-600 mt-1">
+                        Make sure your wallet has KYC_ORACLE_ROLE granted
+                      </p>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* Your Connected Wallet */}
+              <Card>
+                <CardHeader>
+                  <CardTitle>Your Wallet</CardTitle>
+                  <CardDescription>
+                    KYC Oracle credentials
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-slate-600">Connected as:</span>
+                    <code className="bg-slate-100 px-2 py-1 rounded text-xs font-mono">
+                      {address ? `${address.slice(0, 6)}...${address.slice(-4)}` : 'Not connected'}
+                    </code>
+                  </div>
+                  <p className="text-xs text-slate-500">
+                    ⚠️ Make sure this wallet has KYC_ORACLE_ROLE granted by the DAO admin
+                  </p>
+                </CardContent>
+              </Card>
+
+              {/* Instructions */}
+              <Card className="border-blue-200 bg-blue-50/50">
+                <CardHeader>
+                  <CardTitle className="text-blue-900">How to Verify KYC</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-2 text-sm text-blue-800">
+                  <ol className="list-decimal list-inside space-y-2">
+                    <li>Enter the Proposal ID you want to verify</li>
+                    <li>Review the proposal details that appear</li>
+                    <li>Check the organizer's KYC documents (off-chain)</li>
+                    <li>Add detailed verification notes explaining your decision</li>
+                    <li>Click "Verify KYC" to approve or "Reject KYC" to deny</li>
+                    <li>Sign the transaction in your wallet</li>
+                    <li>Wait for blockchain confirmation</li>
+                  </ol>
+                </CardContent>
+              </Card>
+            </div>
+          </>
+        )}
+
         {/* Ecosystem Overview Tab */}
         {sidebarTab === 'overview' && (
           <>

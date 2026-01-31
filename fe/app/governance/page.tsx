@@ -1,8 +1,6 @@
 "use client"
 
-import { useState } from "react"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
+import { useState, useMemo } from "react"
 import { Button } from "@/components/ui/button"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Progress } from "@/components/ui/progress"
@@ -21,15 +19,15 @@ import { Vote, Users, Clock, CheckCircle2, Shield, Plus, ThumbsUp, ThumbsDown, L
 import { useProposals, useProposalCount } from "@/hooks/useProposals"
 import { useVoting } from "@/hooks/useVoting"
 import { useVotingPower } from "@/hooks/useVotingPower"
-import { useAccount } from "wagmi"
-import { handleTransactionError, handleWalletError } from "@/lib/errors"
+import { useAccount, useReadContracts } from "wagmi"
+import { handleWalletError } from "@/lib/errors"
 import { useToast } from "@/hooks/use-toast"
-import { ProposalStatus, KYCStatus, CampaignType, getProposalStatusLabel, getCampaignTypeLabel, VoteSupport } from "@/lib/types"
+import { ProposalStatus, CampaignType, VoteSupport } from "@/lib/types"
+import { CONTRACT_ADDRESSES, VotingManagerABI } from "@/lib/abi"
 
 export default function GovernancePage() {
   const { toast } = useToast()
   const { address, isConnected } = useAccount()
-  const [hasVoted, setHasVoted] = useState<Record<string, boolean>>({})
   const [activeLayer, setActiveLayer] = useState<"community" | "sharia">("community")
 
   // Get real voting power from blockchain
@@ -37,14 +35,50 @@ export default function GovernancePage() {
 
   // Get proposal count first
   const { proposalCount, isLoading: isLoadingCount } = useProposalCount()
-  const proposalCountNum = proposalCount ? Number(proposalCount) : 0
+
+  // Voting hook - call BEFORE calculating proposalIds to maintain consistent hook order
+  const { castVote, finalizeCommunityVote, submitForCommunityVote, isLoading: isVoting } = useVoting()
+
+  // Memoize proposalIds to ensure stable array for useProposals
+  const proposalIds = useMemo(() => {
+    const proposalCountNum = proposalCount ? Number(proposalCount) : 0
+    return proposalCountNum > 0 ? Array.from({ length: Math.min(proposalCountNum, 10) }, (_, i) => i + 1) : [0, 1, 2, 3]
+  }, [proposalCount])
+
 
   // Get all proposals
-  const proposalIds = proposalCountNum > 0 ? Array.from({ length: Math.min(proposalCountNum, 10) }, (_, i) => i) : [0, 1, 2, 3]
   const { proposals: blockchainProposals, isLoading: isLoadingProposals, refetch: refetchProposals } = useProposals(proposalIds)
 
-  // Voting hook
-  const { castVote, finalizeCommunityVote, submitForCommunityVote, isLoading: isVoting } = useVoting()
+  // Fetch hasVoted status for each proposal from VotingManager
+  const hasVotedContracts = proposalIds.map((id) => ({
+    address: CONTRACT_ADDRESSES.VotingManager,
+    abi: VotingManagerABI,
+    functionName: "hasVoted" as const,
+    args: [BigInt(id), address || "0x0000000000000000000000000000000000000000"] as const,
+  }))
+
+  const { data: hasVotedData, refetch: refetchHasVoted } = useReadContracts({
+    contracts: hasVotedContracts,
+    query: {
+      staleTime: 10_000,
+      gcTime: 60_000,
+      enabled: proposalIds.length > 0 && !!address,
+    },
+  })
+
+  // Map hasVoted data to proposal IDs
+  const hasVoted = useMemo(() => {
+    const votedMap: Record<string, boolean> = {}
+    if (hasVotedData) {
+      proposalIds.forEach((id, index) => {
+        const result = hasVotedData[index]
+        votedMap[id.toString()] = result?.status === "success" ? (result.result as boolean) : false
+      })
+    }
+    return votedMap
+  }, [hasVotedData, proposalIds])
+
+  console.log(blockchainProposals)
 
   const handleVote = async (proposalId: string, voteType: "for" | "against" | "abstain") => {
     if (!isConnected) {
@@ -56,7 +90,7 @@ export default function GovernancePage() {
 
     const result = await castVote(BigInt(proposalId), support)
     if (result) {
-      setHasVoted({ ...hasVoted, [proposalId]: true })
+      await refetchHasVoted()
       await refetchProposals()
     }
   }
@@ -77,8 +111,11 @@ export default function GovernancePage() {
       return
     }
 
-    await submitForCommunityVote(BigInt(proposalId))
-    await refetchProposals()
+    const result = await submitForCommunityVote(BigInt(proposalId))
+
+    if (result?.txHash) {
+      await refetchProposals()
+    }
   }
 
   const userVotingPower = Number(votingPower || BigInt(0))
@@ -494,42 +531,41 @@ function ProposalCard({
             </Button>
           )}
 
-          {/* Active - Vote Buttons */}
-          {proposal.status === "Active" && (
+          {/* Active - Vote Buttons (only show if not voted) */}
+          {proposal.status === "Active" && !hasVoted && (
             <>
-              {hasVoted ? (
-                <span className="inline-flex items-center px-3 py-1 rounded-md text-xs font-medium bg-gray-100 border border-black gap-1">
-                  <CheckCircle2 className="h-3 w-3" />
-                  Voted
-                </span>
-              ) : (
-                <>
-                  <button
-                    className="flex items-center gap-1 px-3 py-1 text-xs font-medium rounded-md border border-green-600 text-green-600 hover:bg-green-600 hover:text-white bg-transparent disabled:opacity-50"
-                    onClick={() => onVote("for")}
-                    disabled={isLoading}
-                  >
-                    <ThumbsUp className="h-3 w-3" />
-                    Vote For
-                  </button>
-                  <button
-                    className="flex items-center gap-1 px-3 py-1 text-xs font-medium rounded-md border border-red-600 text-red-600 hover:bg-red-600 hover:text-white bg-transparent disabled:opacity-50"
-                    onClick={() => onVote("against")}
-                    disabled={isLoading}
-                  >
-                    <ThumbsDown className="h-3 w-3" />
-                    Against
-                  </button>
-                  <button
-                    className="flex items-center gap-1 px-3 py-1 text-xs font-medium rounded-md border border-gray-600 text-gray-600 hover:bg-gray-600 hover:text-white bg-transparent disabled:opacity-50"
-                    onClick={() => onVote("abstain")}
-                    disabled={isLoading}
-                  >
-                    Abstain
-                  </button>
-                </>
-              )}
+              <button
+                className="flex items-center gap-1 px-3 py-1 text-xs font-medium rounded-md border border-green-600 text-green-600 hover:bg-green-600 hover:text-white bg-transparent disabled:opacity-50"
+                onClick={() => onVote("for")}
+                disabled={isLoading}
+              >
+                <ThumbsUp className="h-3 w-3" />
+                Vote For
+              </button>
+              <button
+                className="flex items-center gap-1 px-3 py-1 text-xs font-medium rounded-md border border-red-600 text-red-600 hover:bg-red-600 hover:text-white bg-transparent disabled:opacity-50"
+                onClick={() => onVote("against")}
+                disabled={isLoading}
+              >
+                <ThumbsDown className="h-3 w-3" />
+                Against
+              </button>
+              <button
+                className="flex items-center gap-1 px-3 py-1 text-xs font-medium rounded-md border border-gray-600 text-gray-600 hover:bg-gray-600 hover:text-white bg-transparent disabled:opacity-50"
+                onClick={() => onVote("abstain")}
+                disabled={isLoading}
+              >
+                Abstain
+              </button>
             </>
+          )}
+
+          {/* Show "Voted" badge if user has already voted */}
+          {proposal.status === "Active" && hasVoted && (
+            <span className="inline-flex items-center px-3 py-1 rounded-md text-xs font-medium bg-green-100 border border-green-600 text-green-700 gap-1">
+              <CheckCircle2 className="h-3 w-3" />
+              Voted
+            </span>
           )}
 
           {/* Can Finalize */}

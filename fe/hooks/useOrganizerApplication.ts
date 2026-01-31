@@ -52,7 +52,7 @@ export enum KYCStatus {
 /**
  * Get organizer application for an address
  */
-export function useOrganizerApplication(applicantAddress?: string) {
+export function useGetOrganizerApplication(applicantAddress?: string) {
   const { data: applicationId } = useReadContract({
     address: CONTRACT_ADDRESSES.ZKTCore,
     abi: ZKTCoreABI,

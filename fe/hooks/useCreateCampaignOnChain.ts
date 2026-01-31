@@ -1,10 +1,18 @@
-'use client';
+"use client";
 
-import { useCallback, useState } from 'react';
-import { useWriteContract, useAccount, useWaitForTransactionReceipt, usePublicClient } from 'wagmi';
-import { ZKTCoreABI, CONTRACT_ADDRESSES } from '@/lib/abi';
-import { toast } from '@/components/ui/use-toast';
-import { pad, toHex, keccak256, stringToBytes } from 'viem';
+import { useCallback, useState } from "react";
+import {
+  useWriteContract,
+  useAccount,
+  useWaitForTransactionReceipt,
+  usePublicClient,
+  useSwitchChain,
+  useChainId,
+} from "wagmi";
+import { ZKTCoreABI, CONTRACT_ADDRESSES } from "@/lib/abi";
+import { toast } from "@/components/ui/use-toast";
+import { pad, toHex, keccak256, stringToBytes } from "viem";
+import { baseSepolia } from "viem/chains";
 
 interface UseCreateCampaignOnChainParams {
   title: string;
@@ -13,6 +21,7 @@ interface UseCreateCampaignOnChainParams {
   isEmergency: boolean;
   zakatChecklistItems: string[];
   metadataURI: string;
+  milestoneInputs?: { description: string; targetAmount: bigint }[];
 }
 
 interface UseCreateCampaignOnChainOptions {
@@ -33,7 +42,9 @@ const generateBytes32CampaignId = (identifier: string): `0x${string}` => {
   return keccak256(stringToBytes(identifier));
 };
 
-export const useCreateCampaignOnChain = (options?: UseCreateCampaignOnChainOptions) => {
+export const useCreateCampaignOnChain = (
+  options?: UseCreateCampaignOnChainOptions,
+) => {
   const { address, isConnected } = useAccount();
   const publicClient = usePublicClient();
   const [isLoading, setIsLoading] = useState(false);
@@ -42,15 +53,18 @@ export const useCreateCampaignOnChain = (options?: UseCreateCampaignOnChainOptio
     isSafe: false,
     threshold: 0,
     owners: [],
-    safeAddress: '',
+    safeAddress: "",
   });
 
   const { writeContractAsync } = useWriteContract();
-  
+  const { switchChainAsync } = useSwitchChain();
+  const chainId = useChainId();
+
   // Optional: Wait for transaction confirmation
-  const { isLoading: isConfirming, isSuccess: isConfirmed } = useWaitForTransactionReceipt({
-    hash: txHash as `0x${string}` | undefined,
-  });
+  const { isLoading: isConfirming, isSuccess: isConfirmed } =
+    useWaitForTransactionReceipt({
+      hash: txHash as `0x${string}` | undefined,
+    });
 
   // Check if current address is a Safe wallet
   const checkIfSafe = useCallback(async () => {
@@ -59,7 +73,7 @@ export const useCreateCampaignOnChain = (options?: UseCreateCampaignOnChainOptio
         isSafe: false,
         threshold: 0,
         owners: [],
-        safeAddress: '',
+        safeAddress: "",
       });
       return;
     }
@@ -67,14 +81,14 @@ export const useCreateCampaignOnChain = (options?: UseCreateCampaignOnChainOptio
     try {
       // Check if account code exists at address (it's a contract)
       const code = await publicClient.getCode({ address });
-      
-      if (!code || code === '0x') {
+
+      if (!code || code === "0x") {
         // Not a contract, so not a Safe
         setSafeInfo({
           isSafe: false,
           threshold: 0,
           owners: [],
-          safeAddress: '',
+          safeAddress: "",
         });
         return;
       }
@@ -83,17 +97,17 @@ export const useCreateCampaignOnChain = (options?: UseCreateCampaignOnChainOptio
       const ownerABI = [
         {
           inputs: [],
-          name: 'getOwners',
-          outputs: [{ internalType: 'address[]', name: '', type: 'address[]' }],
-          stateMutability: 'view',
-          type: 'function',
+          name: "getOwners",
+          outputs: [{ internalType: "address[]", name: "", type: "address[]" }],
+          stateMutability: "view",
+          type: "function",
         },
         {
           inputs: [],
-          name: 'getThreshold',
-          outputs: [{ internalType: 'uint256', name: '', type: 'uint256' }],
-          stateMutability: 'view',
-          type: 'function',
+          name: "getThreshold",
+          outputs: [{ internalType: "uint256", name: "", type: "uint256" }],
+          stateMutability: "view",
+          type: "function",
         },
       ];
 
@@ -102,12 +116,12 @@ export const useCreateCampaignOnChain = (options?: UseCreateCampaignOnChainOptio
           publicClient.readContract({
             address,
             abi: ownerABI,
-            functionName: 'getOwners',
+            functionName: "getOwners",
           }),
           publicClient.readContract({
             address,
             abi: ownerABI,
-            functionName: 'getThreshold',
+            functionName: "getThreshold",
           }),
         ]);
 
@@ -118,28 +132,28 @@ export const useCreateCampaignOnChain = (options?: UseCreateCampaignOnChainOptio
           safeAddress: address,
         });
 
-        console.log('✅ Safe wallet detected:', {
+        console.log("✅ Safe wallet detected:", {
           address,
           owners,
           threshold: thresholdValue,
         });
       } catch (contractReadError) {
         // Contract read failed, assume not a Safe
-        console.log('Not a Safe wallet or Safe methods unavailable');
+        console.log("Not a Safe wallet or Safe methods unavailable");
         setSafeInfo({
           isSafe: false,
           threshold: 0,
           owners: [],
-          safeAddress: '',
+          safeAddress: "",
         });
       }
     } catch (error) {
-      console.error('Error checking if Safe wallet:', error);
+      console.error("Error checking if Safe wallet:", error);
       setSafeInfo({
         isSafe: false,
         threshold: 0,
         owners: [],
-        safeAddress: '',
+        safeAddress: "",
       });
     }
   }, [address, publicClient]);
@@ -148,11 +162,11 @@ export const useCreateCampaignOnChain = (options?: UseCreateCampaignOnChainOptio
     async (params: UseCreateCampaignOnChainParams) => {
       // Validation 1: Wallet connected
       if (!isConnected || !address) {
-        const error = new Error('Wallet not connected');
+        const error = new Error("Wallet not connected");
         toast({
-          title: 'Error',
-          description: 'Please connect your wallet first',
-          variant: 'destructive',
+          title: "Error",
+          description: "Please connect your wallet first",
+          variant: "destructive",
         });
         options?.onError?.(error);
         return null;
@@ -161,11 +175,32 @@ export const useCreateCampaignOnChain = (options?: UseCreateCampaignOnChainOptio
       setIsLoading(true);
 
       try {
-        console.log('🚀 Creating proposal on-chain:', {
+        // Ensure we are on Base Sepolia
+        if (chainId !== baseSepolia.id) {
+          try {
+            toast({
+              title: "Switching Network",
+              description: "Please confirm switching to Base Sepolia...",
+            });
+            await switchChainAsync({ chainId: baseSepolia.id });
+          } catch (switchError) {
+            console.error("Failed to switch network:", switchError);
+            toast({
+              title: "Network Switch Failed",
+              description: "Please manually switch your wallet to Base Sepolia.",
+              variant: "destructive",
+            });
+            setIsLoading(false);
+            return null;
+          }
+        }
+
+        console.log("🚀 Creating proposal on-chain:", {
           title: params.title,
           fundingGoal: params.fundingGoal,
           isEmergency: params.isEmergency,
           metadataURI: params.metadataURI,
+          milestones: params.milestoneInputs?.length || 0,
         });
 
         // Convert funding goal to wei (18 decimals)
@@ -175,45 +210,45 @@ export const useCreateCampaignOnChain = (options?: UseCreateCampaignOnChainOptio
         const hash = await writeContractAsync({
           address: CONTRACT_ADDRESSES.ZKTCore as `0x${string}`,
           abi: ZKTCoreABI,
-          functionName: 'createProposal',
+          functionName: "createProposal",
           args: [
             params.title,
             params.description,
             fundingGoalWei,
             params.isEmergency,
-            '0x0000000000000000000000000000000000000000000000000000000000000000', // mockZKKYCProof
+            "0x0000000000000000000000000000000000000000000000000000000000000000", // mockZKKYCProof
             params.zakatChecklistItems,
             params.metadataURI,
+            params.milestoneInputs || [], // Pass milestones or empty array
           ],
         });
 
         setTxHash(hash);
 
         toast({
-          title: 'Transaction Submitted',
-          description: 'Waiting for confirmation...',
+          title: "Transaction Submitted",
+          description: "Waiting for confirmation...",
         });
 
-        console.log('✅ Transaction submitted:', hash);
+        console.log("✅ Transaction submitted:", hash);
 
         options?.onSuccess?.(hash);
 
         return {
           txHash: hash,
         };
-
       } catch (error: any) {
-        console.error('❌ Error creating campaign on-chain:', error);
+        console.error("❌ Error creating campaign on-chain:", error);
 
         // Parse common errors
-        let errorMessage = 'Failed to create campaign on blockchain';
+        let errorMessage = "Failed to create campaign on blockchain";
 
-        if (error?.message?.includes('user rejected')) {
-          errorMessage = 'Transaction rejected by user';
-        } else if (error?.message?.includes('insufficient funds')) {
-          errorMessage = 'Insufficient funds for gas';
-        } else if (error?.message?.includes('Only admin')) {
-          errorMessage = 'Only admin can create campaigns';
+        if (error?.message?.includes("user rejected")) {
+          errorMessage = "Transaction rejected by user";
+        } else if (error?.message?.includes("insufficient funds")) {
+          errorMessage = "Insufficient funds for gas";
+        } else if (error?.message?.includes("Only admin")) {
+          errorMessage = "Only admin can create campaigns";
         } else if (error?.reason) {
           errorMessage = error.reason;
         } else if (error?.message) {
@@ -221,19 +256,18 @@ export const useCreateCampaignOnChain = (options?: UseCreateCampaignOnChainOptio
         }
 
         toast({
-          title: 'Transaction Failed',
+          title: "Transaction Failed",
           description: errorMessage,
-          variant: 'destructive',
+          variant: "destructive",
         });
 
         options?.onError?.(error);
         return null;
-
       } finally {
         setIsLoading(false);
       }
     },
-    [isConnected, address, writeContractAsync, options]
+    [isConnected, address, writeContractAsync, options],
   );
 
   return {

@@ -13,7 +13,7 @@ export const useCampaign = (poolId?: number | bigint) => {
   const [isLoading, setIsLoading] = useState(false);
 
   const { data: pool, isLoading: isReadLoading, refetch } = useReadContract({
-    address: CONTRACT_ADDRESSES.ZKTCore,
+    address: CONTRACT_ADDRESSES.PoolManager,
     abi: ZKTCoreABI,
     functionName: 'getPool',
     args: poolId ? [BigInt(poolId)] : undefined,

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getCampaignPool, calculateDaysLeft } from '@/lib/contract-client';
+import { campaigns as demoCampaigns } from '@/data/campaigns';
 
 export async function GET(
   request: NextRequest,
@@ -17,7 +18,46 @@ export async function GET(
     }
 
     // Fetch campaign from contract
-    const campaign = await getCampaignPool(poolId);
+    let campaign = null;
+    try {
+      campaign = await getCampaignPool(poolId);
+    } catch (err) {
+      console.warn('Contract fetch failed, will try demo data if available', err);
+      campaign = null;
+    }
+
+    // If mocks are enabled or contract returned no campaign, try demo data
+    if (!campaign || process.env.NEXT_PUBLIC_USE_MOCKS === '1') {
+      const demo = demoCampaigns.find((d) => d.id === poolId);
+      if (demo) {
+        const nowSec = Math.floor(Date.now() / 1000);
+        const createdAt = nowSec - (demo.daysLeft || 30) * 24 * 60 * 60; // approximate createdAt
+        const endTime = nowSec + (demo.daysLeft || 30) * 24 * 60 * 60;
+
+        campaign = {
+          poolId: demo.id,
+          title: demo.title,
+          description: `${demo.title} — Support provided by ${demo.organizationName}.`,
+          imageUrl: demo.image,
+          imageUrls: demo.image ? [demo.image] : [],
+          organizationName: demo.organizationName,
+          organizationVerified: false,
+          organizer: '',
+          category: demo.category,
+          location: demo.location || '',
+          raised: demo.raised,
+          goal: demo.goal,
+          donors: demo.donors,
+          endTime,
+          createdAt,
+          isActive: true,
+          isVerified: false,
+          campaignType: 0,
+          tags: [],
+          metadataURI: undefined,
+        } as any;
+      }
+    }
 
     if (!campaign) {
       return NextResponse.json(

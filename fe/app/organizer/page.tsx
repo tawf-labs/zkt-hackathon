@@ -1,3 +1,5 @@
+'use client';
+
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -269,7 +271,6 @@ function StatCard({
   icon: any;
   color: string;
 }) {
-  const Icon = Icon;
   const colorClasses = {
     blue: 'text-blue-600 bg-blue-50',
     green: 'text-green-600 bg-green-50',
@@ -306,8 +307,6 @@ function QuickActionCard({
   icon: any;
   href: string;
 }) {
-  const Icon = icon;
-
   return (
     <Link href={href} className="group">
       <Card className="transition-all hover:shadow-md hover:border-primary/50 h-full">

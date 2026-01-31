@@ -1,24 +1,14 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { 
-  Upload, MapPin, Target, 
-  CheckCircle2, Loader2, X, AlertCircle,
-  Users, Lock, Wallet, ArrowLeft, Plus, Trash2
+  Upload, CheckCircle2, Loader2, X, AlertCircle,
+  ArrowLeft, Plus, Trash2, Lock
 } from 'lucide-react';
-import { useCreateCampaignWithSafe } from '@/hooks/useCreateCampaignWithSafe';
+import { useCreateCampaign } from '@/hooks/useCreateCampaign';
 import { useAccount } from 'wagmi';
 import { toast } from '@/components/ui/use-toast';
 import { keccak256, stringToBytes } from 'viem';
-import { uploadFilesToPinata } from '@/lib/pinata-client';
-
-const SAFE_SIGNERS = [
-  '0xB4D04aFd15Fa8752EE94B1510A755e04d362876D',
-  '0x9F5952826B61f1Aab3A4E7E8Fb238a8894D1D174',
-  '0xeF4DB09D536439831FEcaA33fE4250168976535E',
-  '0xE509912bAA5Dd52F3f51E994bb9F9A79FDd2249a',
-  '0x027822307511a055eB0f5907F2685DaB1204e14B',
-];
 
 export default function CreateCampaignPage() {
   const [isClientReady, setIsClientReady] = useState(false)
@@ -63,44 +53,17 @@ const localStringToTimestamp = (localString: string): number => {
 function CreateCampaignInner() {
   const { address: userAddress, isConnected } = useAccount();
   const { 
-    createCampaignWithSafe, 
+    createCampaign, 
     isLoading,
-    isHydrated,
-  } = useCreateCampaignWithSafe();
+    currentStep,
+    uploadProgress
+  } = useCreateCampaign();
   
-  const [isSigner, setIsSigner] = useState(false);
   const [step, setStep] = useState(1);
   const [createdCampaign, setCreatedCampaign] = useState<any>(null);
   const [imageFiles, setImageFiles] = useState<File[]>([]);
   const [imagePreviewUrls, setImagePreviewUrls] = useState<string[]>([]);
   const [milestones, setMilestones] = useState<{ description: string; targetAmount: string }[]>([]);
-  const isMountedRef = useRef(false);
-  
-  // Check if user is Safe signer (only after hydration)
-  useEffect(() => {
-    isMountedRef.current = true;
-    
-    // Delay to ensure hydration is complete
-    const timeoutId = setTimeout(() => {
-      if (!userAddress) {
-        if (isMountedRef.current) {
-          setIsSigner(false);
-        }
-        return;
-      }
-      
-      if (isMountedRef.current) {
-        const isUserSigner = SAFE_SIGNERS.some(
-          (signer) => signer.toLowerCase() === userAddress.toLowerCase()
-        );
-        setIsSigner(isUserSigner);
-      }
-    }, 0);
-
-    return () => {
-      clearTimeout(timeoutId);
-    };
-  }, [userAddress]);
   
   // Initialize start and end times
   const now = Math.floor(Date.now() / 1000);
@@ -182,51 +145,41 @@ function CreateCampaignInner() {
 
   // Validation
   const validateForm = (): boolean => {
-    console.log('🔍 Form Data:', { campaignData, imageFiles });
-
     if (!campaignData.name.trim() || campaignData.name.length < 10) {
-      console.error('❌ Name validation failed:', campaignData.name);
       toast({ title: 'Error', description: 'Campaign name must be at least 10 characters', variant: 'destructive' });
       return false;
     }
     if (!campaignData.description.trim() || campaignData.description.length < 50) {
-      console.error('❌ Description validation failed:', campaignData.description);
       toast({ title: 'Error', description: 'Description must be at least 50 characters', variant: 'destructive' });
       return false;
     }
     if (!campaignData.location.trim()) {
-      console.error('❌ Location validation failed');
       toast({ title: 'Error', description: 'Location is required', variant: 'destructive' });
       return false;
     }
 
     const goal = parseFloat(campaignData.goal);
     if (!campaignData.goal || isNaN(goal) || goal < 1000) {
-      console.error('❌ Goal validation failed:', campaignData.goal);
       toast({ title: 'Error', description: 'Minimum funding goal is 1,000 IDRX', variant: 'destructive' });
       return false;
     }
 
     if (!campaignData.organizationName.trim()) {
-      console.error('❌ Organization name validation failed');
       toast({ title: 'Error', description: 'Organization name is required', variant: 'destructive' });
       return false;
     }
 
     if (!campaignData.startTime || campaignData.startTime <= 0) {
-      console.error('❌ Start time validation failed');
       toast({ title: 'Error', description: 'Start time is required', variant: 'destructive' });
       return false;
     }
 
     if (!campaignData.endTime || campaignData.endTime <= campaignData.startTime) {
-      console.error('❌ End time validation failed');
       toast({ title: 'Error', description: 'End time must be after start time', variant: 'destructive' });
       return false;
     }
 
     if (imageFiles.length === 0) {
-      console.error('❌ No images uploaded');
       toast({ title: 'Error', description: 'At least one image is required', variant: 'destructive' });
       return false;
     }
@@ -258,63 +211,28 @@ function CreateCampaignInner() {
       }
     }
 
-    console.log('✅ All validations passed!');
     return true;
   };
 
   // Submit
   const handleSubmit = async () => {
-    console.log('🔵 Button clicked - handleSubmit called');
-
     if (!isConnected || !userAddress) {
-      toast({ title: 'Not Connected', description: 'Please connect MetaMask first', variant: 'destructive' });
+      toast({ title: 'Not Connected', description: 'Please connect your wallet first', variant: 'destructive' });
       return;
     }
 
-    if (!isSigner) {
-      toast({ title: 'Not a Signer', description: 'Only Safe signers can create campaigns', variant: 'destructive' });
-      return;
-    }
-
-    console.log('📝 Validating form...');
     if (!validateForm()) {
-      console.log('❌ Form validation failed');
       return;
     }
 
-    console.log('✅ Form validation passed');
     setStep(2);
 
     try {
-      console.log('✅ Form validation passed');
-      console.log('🔐 Creating campaign via Safe multisig...');
-
       // Auto-generate campaign ID from name
       const generatedCampaignId = generateCampaignId(campaignData.name);
 
-      // Upload images to Pinata
-      let uploadedImageUrls: string[] = [];
-      if (imageFiles.length > 0) {
-        console.log('📤 Uploading images to Pinata...');
-        try {
-          uploadedImageUrls = await uploadFilesToPinata(imageFiles);
-          console.log('✅ Images uploaded:', uploadedImageUrls);
-        } catch (uploadError) {
-          console.error('⚠️ Image upload failed, continuing with local URLs:', uploadError);
-          // Continue with campaign creation even if image upload fails
-          // but notify the user
-          toast({
-            title: '⚠️ Image Upload Warning',
-            description: 'Images could not be uploaded to Pinata. Campaign will be created with local URLs.',
-          });
-        }
-      }
-
-      // Call the Safe transaction with the proper parameters AND metadata
-      const result = await createCampaignWithSafe({
+      const result = await createCampaign({
         campaignId: generatedCampaignId,
-        startTime: campaignData.startTime,
-        endTime: campaignData.endTime,
         title: campaignData.name,
         description: campaignData.description,
         category: campaignData.category,
@@ -322,30 +240,30 @@ function CreateCampaignInner() {
         goal: parseFloat(campaignData.goal),
         organizationName: campaignData.organizationName,
         organizationVerified: campaignData.organizationVerified,
+        imageFiles: imageFiles,
         tags: campaignData.tags,
-        imageUrls: uploadedImageUrls.length > 0 ? uploadedImageUrls : imagePreviewUrls,
-        milestones: milestones.filter(m => m.description.trim() && m.targetAmount).map(m => ({
+        startTime: campaignData.startTime,
+        endTime: campaignData.endTime,
+        milestones: milestones.map(m => ({
           description: m.description,
-          targetAmount: parseFloat(m.targetAmount)
+          targetAmount: parseFloat(m.targetAmount) || 0
         })),
       });
 
-      console.log('📊 createCampaignWithSafe result:', result);
-
-      // Campaign proposal created successfully
-      const createdData = {
-        isSafeTransaction: true,
-        campaignTitle: campaignData.name,
-        campaignDescription: campaignData.description,
-        chainCampaignId: generatedCampaignId,
-        chainStartTime: campaignData.startTime,
-        chainEndTime: campaignData.endTime,
-        safeTxHash: result?.safeTxHash || '',
-        imageUrls: [],
-      };
-      console.log('✅ Campaign proposed to Safe:', createdData);
-      setCreatedCampaign(createdData);
-      setStep(3);
+      if (result) {
+        const createdData = {
+          campaignTitle: campaignData.name,
+          campaignDescription: campaignData.description,
+          chainCampaignId: generatedCampaignId,
+          chainStartTime: campaignData.startTime,
+          chainEndTime: campaignData.endTime,
+          txHash: result.txHash,
+        };
+        setCreatedCampaign(createdData);
+        setStep(3);
+      } else {
+        setStep(1);
+      }
     } catch (error) {
       console.error('❌ Error creating campaign:', error);
       toast({ title: 'Error', description: String(error), variant: 'destructive' });
@@ -395,15 +313,11 @@ function CreateCampaignInner() {
             <div className="space-y-2">
               <h2 className="text-3xl font-bold">
                 {step === 2 && 'Creating Campaign...'}
-                {step === 3 && (createdCampaign?.isSafeTransaction 
-                  ? 'Transaction Proposed to Safe! 🔐' 
-                  : 'Campaign Created Successfully! 🎉')}
+                {step === 3 && 'Campaign Created Successfully! 🎉'}
               </h2>
               <p className="text-muted-foreground text-lg">
-                {step === 2 && 'Submitting to blockchain...'}
-                {step === 3 && (createdCampaign?.isSafeTransaction
-                  ? `Waiting for ${createdCampaign.requiredSignatures} signature(s) from Safe owners`
-                  : 'Your campaign is now live on the blockchain')}
+                {step === 2 && (currentStep || 'Processing...')}
+                {step === 3 && 'Your campaign proposal is now live on the blockchain'}
               </p>
             </div>
 
@@ -412,12 +326,13 @@ function CreateCampaignInner() {
                 <div className="w-full bg-secondary rounded-full h-3">
                   <div
                     className="bg-gradient-to-r from-primary to-primary/80 h-3 rounded-full transition-all duration-300"
-                    style={{ width: '100%' }}
+                    style={{ width: `${uploadProgress}%` }}
                   ></div>
                 </div>
-                <p className="text-sm text-muted-foreground font-semibold">
-                  Processing transaction...
-                </p>
+                <div className="flex justify-between text-xs text-muted-foreground">
+                  <span>{currentStep}</span>
+                  <span>{uploadProgress}%</span>
+                </div>
               </div>
             )}
 
@@ -428,13 +343,13 @@ function CreateCampaignInner() {
                   <CheckCircle2 className="h-6 w-6 text-green-600 flex-shrink-0 mt-0.5" />
                   <div className="flex-1 min-w-0">
                     <div className="font-bold text-lg mb-1 text-green-900">
-                      ✅ Campaign Successfully Submitted
+                      ✅ Campaign Proposal Submitted
                     </div>
                     <p className="text-sm text-green-800 mb-2">
-                      Your campaign has been successfully proposed to the Safe multisig. It will appear in the explorer once all signers approve the transaction.
+                      Your campaign proposal has been successfully submitted to the blockchain. It will be available for community voting.
                     </p>
                     <p className="text-xs text-green-700 font-semibold">
-                      ⏳ Status: Pending Multisig Approval
+                      ⏳ Status: Proposal Submitted
                     </p>
                   </div>
                 </div>
@@ -451,7 +366,7 @@ function CreateCampaignInner() {
                       <p><strong>Campaign ID:</strong> <span className="font-mono break-all">{createdCampaign.chainCampaignId.slice(0, 12)}...{createdCampaign.chainCampaignId.slice(-12)}</span></p>
                       <p><strong>Start Time:</strong> {new Date(createdCampaign.chainStartTime * 1000).toLocaleString()}</p>
                       <p><strong>End Time:</strong> {new Date(createdCampaign.chainEndTime * 1000).toLocaleString()}</p>
-                      <p><strong>Safe Tx Hash:</strong> <span className="font-mono break-all text-blue-600">{createdCampaign.safeTxHash.slice(0, 12)}...{createdCampaign.safeTxHash.slice(-12)}</span></p>
+                      <p><strong>Tx Hash:</strong> <span className="font-mono break-all text-blue-600">{createdCampaign.txHash?.slice(0, 12)}...{createdCampaign.txHash?.slice(-12)}</span></p>
                     </div>
                   </div>
                 </div>
@@ -464,9 +379,9 @@ function CreateCampaignInner() {
                       📝 Next Steps
                     </div>
                     <ul className="text-xs text-amber-800 space-y-1 list-disc list-inside">
-                      <li>Other Safe signers must review and approve this transaction</li>
-                      <li>Once approved, your campaign will be visible in the explorer</li>
-                      <li>Check the Safe interface using the transaction hash above</li>
+                      <li>Your proposal is now visible on the Governance page</li>
+                      <li>Share your proposal to get community votes</li>
+                      <li>Once approved, a fundraising pool will be created</li>
                     </ul>
                   </div>
                 </div>
@@ -498,15 +413,6 @@ function CreateCampaignInner() {
   // Main Form
   return (
     <div className="min-h-screen bg-gradient-to-b from-white to-secondary/20 py-12 px-4">
-      {!isHydrated ? (
-        <div className="container mx-auto max-w-5xl flex items-center justify-center min-h-screen">
-          <div className="text-center">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
-            <p className="text-muted-foreground">Loading campaign creation form...</p>
-          </div>
-        </div>
-      ) : (
-        <>
       <div className="container mx-auto max-w-4xl">
         {/* Header */}
         <div className="mb-8 text-center">
@@ -517,13 +423,13 @@ function CreateCampaignInner() {
         </div>
 
         {/* Connection Status */}
-        {!isSigner && (
+        {!isConnected && (
           <div className="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-lg flex items-start gap-3">
             <AlertCircle className="h-5 w-5 text-amber-600 flex-shrink-0 mt-0.5" />
             <div>
-              <p className="font-semibold text-amber-900">Safe Signer Required</p>
+              <p className="font-semibold text-amber-900">Wallet Not Connected</p>
               <p className="text-sm text-amber-800 mt-1">
-                Please connect a Safe signer wallet to create campaigns.
+                Please connect your wallet to create campaigns.
               </p>
             </div>
           </div>
@@ -800,14 +706,13 @@ function CreateCampaignInner() {
               </button>
               <button
                 onClick={handleSubmit}
-                disabled={!isSigner || isLoading}
+                disabled={!isConnected || isLoading}
                 className="flex-1 bg-primary text-white hover:bg-primary/90 hover:shadow-lg rounded-lg h-11 px-4 font-semibold transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                title={!isSigner ? 'Please connect a Safe signer wallet first' : ''}
               >
                 {isLoading ? (
                   <>
                     <Loader2 className="h-4 w-4 animate-spin" />
-                    Creating campaign securely…
+                    Creating campaign...
                   </>
                 ) : (
                   <>
@@ -819,8 +724,6 @@ function CreateCampaignInner() {
           </div>
         </div>
       </div>
-        </>
-      )}
     </div>
   );
 }

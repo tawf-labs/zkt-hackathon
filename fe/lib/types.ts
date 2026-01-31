@@ -159,6 +159,7 @@ export interface Proposal {
   votesAgainst: bigint;
   votesAbstain: bigint;
   communityVotePassed: boolean;
+  metadataURI: string;
 }
 
 /**
@@ -207,6 +208,7 @@ export interface ProposalData {
   isPendingReview: boolean;
   isShariaApproved: boolean;
   isCompleted: boolean;
+  metadataURI: string;
 }
 
 /**
@@ -350,6 +352,7 @@ export function proposalToProposalData(proposal: Proposal): ProposalData {
     proposal.status === ProposalStatus.PoolCreated ||
     proposal.status === ProposalStatus.Completed;
   const isCompleted = proposal.status === ProposalStatus.Completed;
+  const metadataURI = proposal.metadataURI ? proposal.metadataURI.replace("ipfs://", "") : "";
 
   return {
     id: proposal.proposalId.toString(),
@@ -375,6 +378,7 @@ export function proposalToProposalData(proposal: Proposal): ProposalData {
     isPendingReview,
     isShariaApproved,
     isCompleted,
+    metadataURI
   };
 }
 

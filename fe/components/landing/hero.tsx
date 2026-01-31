@@ -13,9 +13,14 @@ export function Hero() {
   
   return (
     <section className="relative overflow-hidden bg-gradient-to-br from-white via-secondary/30 to-accent pt-15 pb-20 lg:pt-32 lg:pb-28">
-     
-        <div className="absolute flex h-full w-full opacity-50">
-          <Image fill alt="hero background" src="zkt-hero-background.png" className='object-cover'/>
+        <div className="absolute inset-0 opacity-40 pointer-events-none">
+          <Image
+            src="/zkt-hero-background.png"
+            alt="hero background"
+            fill
+            className="object-cover object-left-top"
+            priority
+          />
         </div>
 <div className="container relative z-10 px-4 mx-auto auto-center gap-12 lg-gap-20">
         <div className="flex flex-col lg:flex-row items-center gap-16 lg:gap-24">
